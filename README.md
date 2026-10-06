@@ -5,7 +5,9 @@ they deserve: both versions rendered side by side, changes highlighted down to
 the word, review comments in place — and the pull request page left completely
 untouched.
 
-![side-by-side rendered diff](docs/screenshot-side-by-side.png)
+![Opening the overlay from a pull request and commenting on a rendered paragraph](docs/demo.gif)
+
+<sub>A fuller walkthrough is in [`docs/demo.mp4`](docs/demo.mp4).</sub>
 
 ## Why
 
@@ -32,6 +34,8 @@ a document that way means reading syntax instead of reading the document.
   edit and delete, all without leaving the window.
 - **A scrollbar minimap** and prev/next change navigation.
 - **Light, dark and dimmed** themes, following whatever GitHub is set to.
+
+![A changed table row highlighted as a row, a changed list item as an item](docs/screenshot-side-by-side.png)
 
 ### The page is not modified
 
