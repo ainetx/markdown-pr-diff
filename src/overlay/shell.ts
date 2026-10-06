@@ -15,6 +15,7 @@ import type { Layout, Settings } from '@shared/settings';
 import { saveSettings } from '@shared/settings';
 import { containKeyboardEvents } from './keyboard';
 import { createDocumentView } from './document';
+import { captureAnchor, restoreAnchor } from './scrollAnchor';
 import { createSegmentedControl } from './segmented';
 import { createSideBySide } from './sideBySide';
 import { createThreadLayer, type ThreadActions, type ThreadLayer } from './threads';
@@ -110,7 +111,6 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
 
   const stats = doc.createElement('span');
   stats.className = 'mdpd-stat';
-
 
   const commentsBtn = button(doc, '💬', 'Show or hide review comments');
   const prevBtn = button(doc, '↑', 'Previous change');
@@ -289,6 +289,11 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   }
 
   function renderBody(): void {
+    // Which line was being read, so the same one can be read afterwards. The
+    // layouts place the file at completely different heights, so the scroll
+    // offset itself is worth nothing across a switch.
+    const anchor = view ? captureAnchor(view) : null;
+
     threadLayer?.destroy();
     view?.destroy();
     content.replaceChildren();
@@ -339,11 +344,15 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     threadLayer.setVisible(commentsVisible);
 
     view.refresh();
+
+    // After layout, so the measurements the restore depends on are real.
+    if (anchor) {
+      const placed = view;
+      requestAnimationFrame(() => restoreAnchor(placed, anchor));
+    }
   }
 
   // ---------------------------------------------------------- wiring
-
-
 
   commentsBtn.addEventListener('click', () => {
     commentsVisible = !commentsVisible;
