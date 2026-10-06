@@ -44,9 +44,12 @@ of the markup. Close the window and the pull request is exactly as it was.
 ## Install
 
 ```bash
-npm install
-npm run build
+make install
+make build
 ```
+
+`make` on its own lists the targets. Everything is also available as an npm
+script; `make` is only a discoverable front for them.
 
 Then open `chrome://extensions`, turn on Developer mode, choose **Load
 unpacked**, and select the **`dist/`** directory — not the repository root.
@@ -124,12 +127,17 @@ done on GitHub, and the options page links straight to it.
 ## Development
 
 ```bash
-npm run dev        # fixture playground — the whole engine, no GitHub needed
-npm test           # unit and property tests
-npm run typecheck
-npm run lint
-npm run build
-npm run package    # zip for the Chrome Web Store
+make dev        # fixture playground — the whole engine, no GitHub needed
+make test       # unit and property tests
+make check      # typecheck, lint, test, build, verify dist/
+make package    # zip for the Chrome Web Store
+make clean
+```
+
+Build with the OAuth client id to enable the device flow:
+
+```bash
+make build GITHUB_CLIENT_ID=Ov23li...
 ```
 
 The playground at `dev/` renders the fixture pairs in `test/fixtures/` through
