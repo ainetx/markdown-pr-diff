@@ -187,7 +187,11 @@ async function siteAccessGranted(host: string): Promise<boolean> {
 document.querySelector('#build')!.textContent = `build ${BUILD_STAMP}`;
 
 async function main(): Promise<void> {
-  let settings: Settings = await loadSettings();
+  // Nothing here depends on anything else here, and the popup is on screen
+  // showing "Checking…" for as long as the slowest one takes.
+  const [loaded, host] = await Promise.all([loadSettings(), activeHost()]);
+
+  let settings: Settings = loaded;
   showButton.checked = settings.showButton;
   showComments.checked = settings.showComments;
 
@@ -197,8 +201,6 @@ async function main(): Promise<void> {
   showComments.addEventListener('change', async () => {
     settings = await saveSettings({ showComments: showComments.checked });
   });
-
-  const host = await activeHost();
 
   if (!(await siteAccessGranted(host))) {
     statusEl.replaceChildren();

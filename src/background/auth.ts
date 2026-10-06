@@ -9,6 +9,7 @@ import { loadSettings } from '@shared/settings';
 import { ApiError, getViewer, missingScopes } from './api';
 import { DeviceFlowError, pollForToken, startDeviceFlow } from './deviceFlow';
 import { clearToken, getToken, getTokenMeta, setToken } from './tokenStore';
+import { cacheViewer, cachedViewer } from './viewerCache';
 
 /** The device-flow client id registered for a host, if there is one. */
 export async function clientIdFor(host: string): Promise<string> {
@@ -18,9 +19,14 @@ export async function clientIdFor(host: string): Promise<string> {
 }
 
 export async function authStatus(host: string): Promise<AuthStatus> {
-  const deviceFlowAvailable = (await clientIdFor(host)) !== '';
-  const meta = await getTokenMeta(host);
-  const token = await getToken(host);
+  // Independent of one another, and every one of them is a round trip to
+  // storage: the popup asks for this the instant it opens.
+  const [clientId, meta, token] = await Promise.all([
+    clientIdFor(host),
+    getTokenMeta(host),
+    getToken(host),
+  ]);
+  const deviceFlowAvailable = clientId !== '';
 
   if (!token) {
     return {
@@ -33,8 +39,21 @@ export async function authStatus(host: string): Promise<AuthStatus> {
     };
   }
 
+  const known = await cachedViewer(host);
+  if (known) {
+    return {
+      connected: true,
+      meta,
+      viewer: known,
+      missingScopes: missingScopes(known),
+      deviceFlowAvailable,
+      problem: null,
+    };
+  }
+
   try {
     const viewer = await getViewer(host);
+    await cacheViewer(host, viewer);
     return {
       connected: true,
       meta,
@@ -81,6 +100,7 @@ export async function storeVerifiedToken(
 
   try {
     const viewer = await getViewer(host);
+    await cacheViewer(host, viewer);
     const meta = await setToken(host, token, {
       login: viewer.login,
       scopes: viewer.scopes.length > 0 ? viewer.scopes : scopesFromFlow,

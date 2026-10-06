@@ -15,6 +15,8 @@
  * content script, never put in a message response, and never logged.
  */
 
+import { forgetViewer } from './viewerCache';
+
 const DB_NAME = 'mdpd-keys';
 const DB_STORE = 'keys';
 const MASTER_KEY = 'master';
@@ -201,6 +203,9 @@ export async function clearToken(host: string): Promise<void> {
   memory.delete(host);
   await chrome.storage.local.remove([CIPHER_PREFIX + host, META_PREFIX + host]);
   await chrome.storage.session.remove(SESSION_PREFIX + host);
+  // Here rather than at the call sites: whoever adds the next way to drop a
+  // token should not have to know that an identity was cached alongside it.
+  await forgetViewer(host);
 
   // Once no host has a token left, throw the key away too.
   const remaining = await chrome.storage.local.get(null);
