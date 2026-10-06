@@ -43,6 +43,23 @@ of the markup. Close the window and the pull request is exactly as it was.
 
 ## Install
 
+Not in the Chrome Web Store yet, so installation is Load unpacked either way.
+
+### From a release
+
+Take the zip from [the latest release][releases] and unpack it somewhere
+permanent — Chrome reads the directory from disk on every start, so a folder in
+Downloads that gets cleaned up takes the extension with it.
+
+Then open `chrome://extensions`, turn on **Developer mode** (top right), press
+**Load unpacked**, and select the unpacked directory — the one directly
+containing `manifest.json`.
+
+The zip itself cannot be dropped onto the extensions page; Chrome only accepts
+a packed `.crx` that way, and these builds are not signed.
+
+### From source
+
 ```bash
 make install
 make build
@@ -51,10 +68,22 @@ make build
 `make` on its own lists the targets. Everything is also available as an npm
 script; `make` is only a discoverable front for them.
 
-Then open `chrome://extensions`, turn on Developer mode, choose **Load
-unpacked**, and select the **`dist/`** directory — not the repository root.
-`dist/` is what `npm run build` assembles; the repository root is source and
-Chrome cannot load it.
+Then Load unpacked the **`dist/`** directory — not the repository root. `dist/`
+is what the build assembles; the root is source, and the manifest deliberately
+lives under `src/` so that pointing Chrome at the root fails plainly instead of
+half-loading something.
+
+### Either way
+
+- Chrome will warn about extensions in developer mode on each startup. That is
+  the price of an unpacked install, not a sign of a problem.
+- Rebuilding updates the files but not the running extension: press the reload
+  arrow on the extension's card, then reload any open pull request tab, since
+  the old content script keeps running in tabs that were already open.
+- The popup shows a build stamp. If behaviour disagrees with what a build
+  should do, that stamp says which build is actually running.
+
+[releases]: https://github.com/ainetx/markdown-pr-diff/releases/latest
 
 ## Connecting a GitHub account
 
