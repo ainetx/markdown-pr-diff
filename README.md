@@ -71,9 +71,14 @@ This is the OAuth device flow — no password, no client secret, no server.
 The device flow needs an OAuth App to identify the extension. Register one
 once:
 
-1. GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App.
-2. Tick **Enable Device Flow**.
-3. Build with its client id:
+1. GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App
+   (<https://github.com/settings/developers>).
+2. Fill in a name and a homepage URL. The **Authorization callback URL** is a
+   required field but the device flow never uses it — the repository URL will
+   do.
+3. Register, then on the app's page tick **Enable Device Flow** and update. It
+   is off by default, and without it the flow fails at the first request.
+4. The client id is on that same page, `Ov23li…`. Build with it:
 
 ```bash
 VITE_GITHUB_CLIENT_ID=Ov23li... npm run build
