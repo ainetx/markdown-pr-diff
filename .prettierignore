@@ -1,3 +1,7 @@
 dist
 node_modules
 vendor
+
+# Fixtures are the input under test: reflowing their markdown would change
+# what the tests assert.
+test/fixtures

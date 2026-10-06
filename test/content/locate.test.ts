@@ -104,7 +104,9 @@ describe('findMarkdownFileBlocks', () => {
   });
 
   it('falls back to a title attribute', () => {
-    mount('<div class="x"><div class="hdr"><span title="docs/title.md">title.md</span></div></div>');
+    mount(
+      '<div class="x"><div class="hdr"><span title="docs/title.md">title.md</span></div></div>',
+    );
     expect(findMarkdownFileBlocks()[0]!.path).toBe('docs/title.md');
   });
 
@@ -137,7 +139,11 @@ describe('findMarkdownFileBlocks', () => {
 
   it('handles several markdown files on one page', () => {
     mount(fileHeaderWithCopyControl('a.md') + fileHeaderWithCopyControl('docs/b.md'));
-    expect(findMarkdownFileBlocks().map((b) => b.path).sort()).toEqual(['a.md', 'docs/b.md']);
+    expect(
+      findMarkdownFileBlocks()
+        .map((b) => b.path)
+        .sort(),
+    ).toEqual(['a.md', 'docs/b.md']);
   });
 
   it('finds nothing, and throws nothing, on an unrecognised page', () => {

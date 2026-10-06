@@ -50,7 +50,12 @@ describe('startDeviceFlow', () => {
 
   it('prefers the complete verification url when GitHub supplies one', async () => {
     mockFetch([
-      { body: { ...CODE_OK.body, verification_uri_complete: 'https://github.com/login/device?user_code=ABCD-1234&x=1' } },
+      {
+        body: {
+          ...CODE_OK.body,
+          verification_uri_complete: 'https://github.com/login/device?user_code=ABCD-1234&x=1',
+        },
+      },
     ]);
     const session = await startDeviceFlow(gh, 'CLIENT', 'repo');
     expect(session.verificationUri).toBe('https://github.com/login/device?user_code=ABCD-1234&x=1');

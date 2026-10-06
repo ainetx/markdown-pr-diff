@@ -83,5 +83,7 @@ for (const size of SIZES) {
   const png = render(size);
   const path = new URL(`../icons/icon${size}.png`, import.meta.url);
   writeFileSync(path, png);
-  console.log(`icon${size}.png  ${png.length} bytes  sha1=${createHash('sha1').update(png).digest('hex').slice(0, 8)}`);
+  console.log(
+    `icon${size}.png  ${png.length} bytes  sha1=${createHash('sha1').update(png).digest('hex').slice(0, 8)}`,
+  );
 }

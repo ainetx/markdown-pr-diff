@@ -92,7 +92,8 @@ function elementForLine(root: ParentNode, line: number): HTMLElement | null {
  */
 export function restoreAnchor(view: DiffView, anchor: ScrollAnchor): void {
   const root = view.docFor(anchor.side);
-  const target = elementForLine(root, anchor.line) ?? elementForLine(view.docFor('new'), anchor.line);
+  const target =
+    elementForLine(root, anchor.line) ?? elementForLine(view.docFor('new'), anchor.line);
   if (!target) return;
 
   const scroller = view.scrollerFor(anchor.side);

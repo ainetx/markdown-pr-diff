@@ -14,8 +14,7 @@
 
 const DEFAULT_CLIENT_ID = 'Ov23liz42ed6ltDUD67F';
 
-export const GITHUB_CLIENT_ID: string =
-  import.meta.env?.VITE_GITHUB_CLIENT_ID || DEFAULT_CLIENT_ID;
+export const GITHUB_CLIENT_ID: string = import.meta.env?.VITE_GITHUB_CLIENT_ID || DEFAULT_CLIENT_ID;
 
 /** Scopes requested during the device flow: read the PR, write review comments. */
 export const OAUTH_SCOPES = 'repo';

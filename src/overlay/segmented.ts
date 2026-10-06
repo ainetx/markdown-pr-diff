@@ -85,7 +85,8 @@ export function createSegmentedControl<T extends string>(
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') move(1);
     else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') move(-1);
     else if (event.key === 'Home') select(options.segments[0]!.value, true);
-    else if (event.key === 'End') select(options.segments[options.segments.length - 1]!.value, true);
+    else if (event.key === 'End')
+      select(options.segments[options.segments.length - 1]!.value, true);
     else return;
     event.preventDefault();
   });

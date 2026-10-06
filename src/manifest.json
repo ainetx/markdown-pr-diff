@@ -4,31 +4,22 @@
   "version": "0.1.0",
   "description": "Rendered side-by-side markdown diff for GitHub pull requests, with inline review comments.",
   "minimum_chrome_version": "114",
-  "permissions": [
-    "storage",
-    "scripting"
-  ],
+  "permissions": ["storage", "scripting"],
   "host_permissions": [
     "https://github.com/*",
     "https://api.github.com/*",
     "https://raw.githubusercontent.com/*",
     "https://patch-diff.githubusercontent.com/*"
   ],
-  "optional_host_permissions": [
-    "https://*/*"
-  ],
+  "optional_host_permissions": ["https://*/*"],
   "background": {
     "service_worker": "sw.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://github.com/*"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
