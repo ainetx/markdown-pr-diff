@@ -1,0 +1,7 @@
+.DS_Store
+.pgcheck/
+.vite/
+*.zip
+coverage/
+dist/
+node_modules/

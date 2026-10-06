@@ -1,0 +1,28 @@
+Markdown PR Diff
+================
+
+This product includes software developed by third parties, used under the MIT
+License. Full license texts are in vendor/licenses/.
+
+1. markdown-diff-visualiser
+   https://github.com/arjuntic/markdown-diff-visualiser
+   Copyright (c) 2026 arjun-staticvar
+   License: MIT — vendor/licenses/markdown-diff-visualiser-LICENSE.txt
+
+   The markdown diff engine originates in this VS Code extension. Derived and
+   adapted here:
+     - src/core/markdownRenderer.ts  (from src/markdownRenderer.ts)
+     - src/core/wordDiff.ts          (computeWordDiff, from src/diffHighlighter.ts)
+     - src/core/diffParser.ts        (from src/diffParser.ts)
+     - src/overlay/sideBySide.ts     (scroll sync, pane alignment, scrollbar
+                                      minimap, from src/webview/main.js)
+     - src/overlay/styles.css        (from src/webview/styles.css)
+
+2. md-review-extension
+   https://github.com/sabbour/md-review-extension
+   Copyright (c) 2026 Ahmed Sabbour
+   License: MIT — vendor/licenses/md-review-extension-LICENSE.txt
+
+   Consulted for GitHub pull-request DOM integration: locating per-file diff
+   containers, resolving file paths from container attributes, and the
+   turbo/pjax navigation hooks. Adapted in src/content/.

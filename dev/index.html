@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Markdown PR Diff — playground</title>
+  </head>
+  <body>
+    <header class="pg-header">
+      <strong>Markdown PR Diff</strong>
+      <label>Fixture <select id="fixture"></select></label>
+      <label>Layout
+        <select id="layout">
+          <option value="side-by-side">side by side</option>
+          <option value="unified">unified</option>
+        </select>
+      </label>
+      <label>Theme
+        <select id="theme">
+          <option value="light">light</option>
+          <option value="dark">dark</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="comments" checked /> comments</label>
+      <button id="prev" type="button">↑</button>
+      <button id="next" type="button">↓</button>
+      <span id="stats" class="pg-stats"></span>
+    </header>
+    <main id="mount"></main>
+    <script type="module" src="./playground.ts"></script>
+  </body>
+</html>

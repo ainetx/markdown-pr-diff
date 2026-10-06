@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Markdown PR Diff</title>
+    <link rel="stylesheet" href="../options/options.css" />
+    <style>
+      body {
+        width: 280px;
+      }
+      .page {
+        padding: 14px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 12px;
+      }
+      .card {
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1>Markdown PR Diff</h1>
+      <div class="card" id="status">Checking…</div>
+      <div class="card">
+        <label class="row">
+          <input type="checkbox" id="showButton" />
+          <span>Show the button on markdown files</span>
+        </label>
+        <label class="row">
+          <input type="checkbox" id="showComments" />
+          <span>Show comments in the overlay</span>
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" id="open-options" type="button">Open settings</button>
+        <button class="btn" id="diagnose" type="button">Diagnose page</button>
+      </div>
+      <p class="muted" id="build"></p>
+      <pre class="card" id="diag" hidden></pre>
+    </main>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

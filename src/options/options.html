@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Markdown PR Diff — options</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="page">
+      <h1>Markdown PR Diff</h1>
+
+      <section class="card" id="accounts">
+        <h2>GitHub accounts</h2>
+        <p class="muted">
+          A token is needed to read private pull requests and to post review comments from the
+          overlay. Without one the extension still renders diffs of anything your browser session
+          can already see, in read-only mode.
+        </p>
+        <div id="account-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>Display</h2>
+        <label class="row">
+          <input type="checkbox" id="showButton" />
+          <span>Show the <strong>Visualize diff</strong> button on markdown files</span>
+        </label>
+        <label class="row">
+          <span>Default layout</span>
+          <select id="layout">
+            <option value="side-by-side">Side by side</option>
+            <option value="unified">Unified</option>
+          </select>
+        </label>
+        <label class="row">
+          <input type="checkbox" id="showComments" />
+          <span>Show review comments in the overlay</span>
+        </label>
+        <label class="row">
+          <span>Render files up to</span>
+          <input type="number" id="maxFileSizeKb" min="16" max="20000" step="16" />
+          <span>KB without asking</span>
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>GitHub Enterprise</h2>
+        <p class="muted">
+          Add the hostname of a self-hosted GitHub. Each host needs its own OAuth App registered on
+          that instance with device flow enabled; without one, connect with a personal access token
+          instead.
+        </p>
+        <div id="host-list"></div>
+        <form class="row" id="add-host">
+          <input type="text" id="host-input" placeholder="git.example.com" />
+          <input type="text" id="host-client-id" placeholder="OAuth client id (optional)" />
+          <button class="btn" type="submit">Add host</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>How the token is stored</h2>
+        <p class="muted">
+          The token is encrypted with AES-GCM before it is written to disk, using a key that is
+          generated non-extractable — its bytes cannot be read back out, so copying the browser
+          profile or inspecting extension storage does not yield a usable token. It is held in
+          memory only inside the extension's background worker, and is never passed to a page or
+          written to a log.
+        </p>
+        <p class="muted">
+          It does <strong>not</strong> protect against code running with this extension's own
+          privileges: such code can ask for a decryption just as the extension does. Treat it as
+          encryption at rest, and nothing stronger.
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>
