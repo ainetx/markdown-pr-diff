@@ -17,7 +17,11 @@ function buildStamp(now = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   const date = [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())].join('-');
   const time = [now.getHours(), now.getMinutes(), now.getSeconds()].map(pad).join(':');
-  return `${date} ${time}`;
+
+  // In CI the commit is what people actually want to know. A timestamp alone
+  // identifies a build; the commit identifies what is in it.
+  const sha = process.env.GITHUB_SHA?.slice(0, 7);
+  return sha ? `${date} ${time} ${sha}` : `${date} ${time}`;
 }
 
 export const define = {

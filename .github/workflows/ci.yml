@@ -1,0 +1,59 @@
+# Checks and a downloadable build for every commit.
+#
+# The build artifact is the point: a reviewer or a tester can take the exact
+# bundle a commit produced instead of building it themselves, and the version
+# inside it says which run made it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push makes an in-flight run of the same branch pointless.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck, lint, test, build, and verify the built extension loads.
+      - name: Check
+        run: npm run check
+        env:
+          # Public by design — the device flow exists so a client with no
+          # secret can obtain a token. Stored as a variable, not a secret.
+          # Actions forbids names starting with GITHUB_, hence OAUTH_CLIENT_ID.
+          VITE_GITHUB_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
+
+      - name: Version this build
+        id: version
+        run: |
+          base=$(node -p "require('./src/manifest.json').version")
+          # The run number keeps dev builds strictly increasing, which is what
+          # the Chrome Web Store requires of every upload.
+          version="${base}.${{ github.run_number }}"
+          node scripts/set-version.mjs "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: markdown-pr-diff-${{ steps.version.outputs.version }}
+          path: dist
+          if-no-files-found: error

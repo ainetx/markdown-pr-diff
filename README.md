@@ -161,6 +161,37 @@ src/manifest.json
                manifest whose files do not exist yet.
 ```
 
+### Builds and releases
+
+Every push to `main` and every pull request runs `make check` on CI and uploads
+the built `dist/` as an artifact, so a tested build can be downloaded and loaded
+unpacked without building it locally. Those builds are versioned
+`<manifest version>.<run number>` — the run number only ever goes up, which is
+what the Chrome Web Store requires of successive uploads.
+
+A release is cut by pushing a tag:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+The tag is the version. It is stamped into the manifest of the zip that the
+release attaches, so the store listing and the repository cannot drift apart.
+Locally the same stamping is available as `make version V=1.0.0`, which writes
+`dist/manifest.json` and leaves the source manifest untouched.
+
+CI reads the OAuth client id from the repository variable `OAUTH_CLIENT_ID`
+(Settings → Secrets and variables → Actions → Variables). It is a variable
+rather than a secret because the id is public by design — the device flow exists
+precisely so that a client with no secret can obtain a token. The name cannot
+start with `GITHUB_`; Actions reserves that prefix. Without the variable the
+build still succeeds and the extension falls back to asking for a personal
+access token.
+
+Builds identify themselves: the popup, the overlay toolbar and the diagnostic
+report all show a stamp, and on CI it carries the short commit sha. If a report
+and a build disagree, the stamp settles which code was actually running.
+
 ## Credits
 
 The diff engine began as [arjuntic/markdown-diff-visualiser][upstream], a VS

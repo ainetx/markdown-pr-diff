@@ -69,6 +69,11 @@ package: check ## Build, verify and zip for the Chrome Web Store
 	@echo
 	@ls -lh markdown-pr-diff-$(VERSION).zip
 
+.PHONY: version
+version: ## Stamp a version into dist/ (make version V=1.0.0)
+	@test -n "$(V)" || { echo "usage: make version V=1.0.0"; exit 1; }
+	node scripts/set-version.mjs "$(V)"
+
 .PHONY: icons
 icons: ## Regenerate the placeholder icons
 	node scripts/make-icons.mjs

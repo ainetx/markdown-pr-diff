@@ -1,0 +1,57 @@
+# Publishes a release when a version tag is pushed.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# The tag is the single source of truth for the version: it goes into the
+# manifest of the built zip, so what the store receives and what the repository
+# says can never drift apart.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check
+        run: npm run check
+        env:
+          VITE_GITHUB_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
+
+      - name: Version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/set-version.mjs "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        run: |
+          cd dist
+          # Source maps stay out: a megabyte of them helps nobody in the store.
+          zip -r -q "../markdown-pr-diff-${{ steps.version.outputs.version }}.zip" . -x '*.map'
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: markdown-pr-diff-${{ steps.version.outputs.version }}.zip
+          generate_release_notes: true
+          body: |
+            Load `dist` from the zip via `chrome://extensions` → Load unpacked,
+            or upload the zip to the Chrome Web Store.
+
+            Built from ${{ github.sha }}.
