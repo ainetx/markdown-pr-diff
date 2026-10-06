@@ -2,13 +2,20 @@
  * Build-time configuration.
  *
  * The OAuth client id is public by design — the device flow exists precisely
- * so that a client with no secret can obtain a token. It still has to be
- * registered once: create an OAuth App, tick "Enable Device Flow", and build
- * with VITE_GITHUB_CLIENT_ID set. Without it the extension falls back to a
- * manually pasted personal access token and says so in the options page.
+ * so that a client with no secret can obtain a token, and GitHub treats the id
+ * as public information. So this project's own registered app is the default,
+ * and a build needs no configuration to offer "Connect GitHub".
+ *
+ * A fork, or an installation that would rather authorize its own app, sets
+ * VITE_GITHUB_CLIENT_ID at build time. An empty value counts as unset, because
+ * both the Makefile and CI pass the variable through whether or not anyone
+ * filled it in.
  */
 
-export const GITHUB_CLIENT_ID: string = import.meta.env?.VITE_GITHUB_CLIENT_ID ?? '';
+const DEFAULT_CLIENT_ID = 'Ov23liz42ed6ltDUD67F';
+
+export const GITHUB_CLIENT_ID: string =
+  import.meta.env?.VITE_GITHUB_CLIENT_ID || DEFAULT_CLIENT_ID;
 
 /** Scopes requested during the device flow: read the PR, write review comments. */
 export const OAUTH_SCOPES = 'repo';

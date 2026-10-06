@@ -6,8 +6,8 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# The OAuth App's client id is public by design and is baked into the bundle.
-# Export it, or pass it on the command line:
+# The project's own OAuth App is compiled in by default, so the device flow
+# works out of the box. Override it to authorize a different app:
 #   make build GITHUB_CLIENT_ID=Ov23li...
 GITHUB_CLIENT_ID ?=
 export VITE_GITHUB_CLIENT_ID = $(GITHUB_CLIENT_ID)
@@ -24,8 +24,8 @@ help: ## Show this help
 	@echo
 	@echo "  Load the built extension from dist/ via chrome://extensions."
 ifeq ($(strip $(GITHUB_CLIENT_ID)),)
-	@echo "  GITHUB_CLIENT_ID is unset: the device flow will be unavailable and"
-	@echo "  the options page will ask for a personal access token instead."
+	@echo "  Building against the project's OAuth App. Pass GITHUB_CLIENT_ID to"
+	@echo "  use your own."
 endif
 
 node_modules: package-lock.json package.json

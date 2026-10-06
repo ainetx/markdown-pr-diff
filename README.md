@@ -66,10 +66,19 @@ Open the extension options and press **Connect GitHub**. A tab opens with the
 authorization code already filled in; approve it and the tab closes by itself.
 This is the OAuth device flow — no password, no client secret, no server.
 
-### One-time setup before the button works
+The device flow needs an OAuth App to identify the extension by a client id.
+This project's own is compiled in, so nothing has to be set up first — the id
+is public by design and GitHub documents it as such.
 
-The device flow needs an OAuth App to identify the extension. Register one
-once:
+If your organization enforces OAuth App access restrictions, a token from any
+app it has not approved will not see the organization's private repositories.
+The options page links to the approval request; the way around it is to paste a
+personal access token with the `repo` scope instead, which needs no app at all.
+
+### Using your own OAuth App
+
+A fork, or anyone who would rather their reviewers authorized their app rather
+than this one:
 
 1. GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App
    (<https://github.com/settings/developers>).
@@ -81,12 +90,10 @@ once:
 4. The client id is on that same page, `Ov23li…`. Build with it:
 
 ```bash
-VITE_GITHUB_CLIENT_ID=Ov23li... npm run build
+make build GITHUB_CLIENT_ID=Ov23li...
 ```
 
-The client id is public by design; it is safe to commit. If your organization
-restricts OAuth Apps, or you would rather not register one, paste a personal
-access token with the `repo` scope into the options instead.
+On CI the same id comes from the repository variable `OAUTH_CLIENT_ID`.
 
 For a GitHub Enterprise instance, add its hostname in the options (which asks
 for permission for that origin) and register a separate OAuth App on that
