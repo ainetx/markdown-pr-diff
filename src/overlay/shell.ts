@@ -14,6 +14,7 @@ import { send } from '@shared/messages';
 import type { Layout, Settings } from '@shared/settings';
 import { saveSettings } from '@shared/settings';
 import { containKeyboardEvents } from './keyboard';
+import { createDocumentView } from './document';
 import { createSideBySide } from './sideBySide';
 import { createThreadLayer, type ThreadActions, type ThreadLayer } from './threads';
 import { createUnified } from './unified';
@@ -27,6 +28,25 @@ export interface OverlayOptions {
   payload: FileDiffPayload;
   settings: Settings;
 }
+
+/** The layouts, in the order the toolbar button cycles through them. */
+const LAYOUTS: Record<Layout, { glyph: string; title: string; next: Layout }> = {
+  'side-by-side': {
+    glyph: '⇆',
+    title: 'Side by side — click for unified',
+    next: 'unified',
+  },
+  unified: {
+    glyph: '≡',
+    title: 'Unified — click to read the document',
+    next: 'document',
+  },
+  document: {
+    glyph: '▤',
+    title: 'Reading view, no diff colouring — click for side by side',
+    next: 'side-by-side',
+  },
+};
 
 function detectTheme(): 'light' | 'dark' {
   const mode = document.documentElement.getAttribute('data-color-mode');
@@ -102,7 +122,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   const stats = doc.createElement('span');
   stats.className = 'mdpd-stat';
 
-  const layoutBtn = button(doc, '⇆', 'Switch between side-by-side and unified');
+  const layoutBtn = button(doc, '⇆', 'Switch layout');
   const commentsBtn = button(doc, '💬', 'Show or hide review comments');
   const prevBtn = button(doc, '↑', 'Previous change');
   const nextBtn = button(doc, '↓', 'Next change');
@@ -123,9 +143,9 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     ? ''
     : 'No GitHub account is connected, so comments cannot be read or posted.';
 
-  // With one side missing there is no second layout and nothing to step
-  // through: every block is part of the same single change.
-  layoutBtn.hidden = wholeFile !== null;
+  // A wholly added or deleted file has nothing to compare, so the side-by-side
+  // layout is meaningless for it — but the reading view still is, and so is
+  // commenting. Only the step-through-changes controls go away.
   prevBtn.hidden = wholeFile !== null;
   nextBtn.hidden = wholeFile !== null;
 
@@ -233,6 +253,40 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
 
   // --------------------------------------------------------- rendering
 
+  function buildView(result: RenderedDiff): DiffView {
+    // Reading view: one version, no diff colouring, still commentable.
+    if (layout === 'document') {
+      const side = wholeFile === 'removed' ? 'old' : 'new';
+      return createDocumentView({
+        content: side === 'old' ? result.oldPane : result.newPane,
+        side,
+        label:
+          side === 'old'
+            ? `Base · ${payload.pullRequest.baseSha.slice(0, 7)}`
+            : `Head · ${payload.pullRequest.headSha.slice(0, 7)}`,
+      });
+    }
+
+    // Side by side needs two versions; a wholly added or deleted file has one.
+    if (layout === 'unified' || wholeFile !== null) {
+      return createUnified({
+        oldDoc: result.oldPane,
+        newDoc: result.newPane,
+        regions: result.diff.regions,
+        oldLineCount: result.diff.oldLineCount,
+      });
+    }
+
+    return createSideBySide({
+      oldDoc: result.oldPane,
+      newDoc: result.newPane,
+      oldLabel: `Base · ${payload.pullRequest.baseSha.slice(0, 7)}`,
+      newLabel: `Head · ${payload.pullRequest.headSha.slice(0, 7)}`,
+      regions: result.diff.regions,
+      oldLineCount: result.diff.oldLineCount,
+    });
+  }
+
   function renderBody(): void {
     threadLayer?.destroy();
     view?.destroy();
@@ -245,22 +299,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
       newBases: { asset: payload.headAssetUrl, link: payload.headLinkUrl },
     });
 
-    view =
-      layout === 'unified' || wholeFile !== null
-        ? createUnified({
-            oldDoc: rendered.oldPane,
-            newDoc: rendered.newPane,
-            regions: rendered.diff.regions,
-            oldLineCount: rendered.diff.oldLineCount,
-          })
-        : createSideBySide({
-            oldDoc: rendered.oldPane,
-            newDoc: rendered.newPane,
-            oldLabel: `Base · ${payload.pullRequest.baseSha.slice(0, 7)}`,
-            newLabel: `Head · ${payload.pullRequest.headSha.slice(0, 7)}`,
-            regions: rendered.diff.regions,
-            oldLineCount: rendered.diff.oldLineCount,
-          });
+    view = buildView(rendered);
 
     content.appendChild(view.root);
 
@@ -277,9 +316,9 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     removed.textContent = `−${rendered.stats.removed + rendered.stats.modified}`;
     stats.append(added, doc.createTextNode(' '), removed);
 
-    layoutBtn.textContent = layout === 'unified' ? '≡' : '⇆';
-
-    layoutBtn.setAttribute('aria-pressed', String(layout === 'unified'));
+    layoutBtn.textContent = LAYOUTS[layout].glyph;
+    layoutBtn.title = LAYOUTS[layout].title;
+    layoutBtn.setAttribute('aria-pressed', String(layout !== 'side-by-side'));
     commentsBtn.setAttribute('aria-pressed', String(commentsVisible));
 
     threadLayer = createThreadLayer({
@@ -306,7 +345,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   // ---------------------------------------------------------- wiring
 
   layoutBtn.addEventListener('click', () => {
-    layout = layout === 'unified' ? 'side-by-side' : 'unified';
+    layout = LAYOUTS[layout].next;
     void saveSettings({ layout });
     renderBody();
   });

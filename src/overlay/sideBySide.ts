@@ -261,6 +261,7 @@ export function createSideBySide(options: SideBySideOptions): DiffView {
     goToChange,
     scrollerFor: (side: Side) => (side === 'old' ? oldScroller : newScroller),
     docFor: (side: Side) => (side === 'old' ? options.oldDoc : options.newDoc),
+    sideFor: (block: HTMLElement) => (options.oldDoc.contains(block) ? 'old' : 'new'),
     destroy() {
       cancelImageWait();
       resizeObserver?.disconnect();

@@ -927,3 +927,74 @@ tr.diff-removed-block > th {
   font-size: 10px;
   opacity: 0.75;
 }
+
+/* ------------------------------------------------- the reading view */
+
+/* One version of the file, read as a document: the diff marks stay in the
+   DOM so threads and the gutter keep their anchors, but say nothing here. */
+.mdpd-plain .diff-added-block,
+.mdpd-plain .diff-removed-block {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.mdpd-plain tr.diff-added-block > td,
+.mdpd-plain tr.diff-added-block > th,
+.mdpd-plain tr.diff-removed-block > td,
+.mdpd-plain tr.diff-removed-block > th {
+  background: none;
+}
+
+.mdpd-plain .diff-added-word,
+.mdpd-plain .diff-removed-word {
+  background: none;
+  text-decoration: none;
+}
+
+/* Where a comment can go.
+   Quiet enough to read past, present enough to find without hunting.
+   Only in the reading view: the diff layouts already colour the blocks that
+   accept a comment, and a second marker beside them is just noise. */
+.mdpd-plain .mdpd-commentable {
+  position: relative;
+}
+
+.mdpd-plain .mdpd-commentable::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--mdpd-border);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.mdpd-plain .mdpd-commentable:hover::before {
+  background: var(--mdpd-accent);
+  opacity: 1;
+}
+
+/* A table row cannot host an absolutely positioned marker reliably, and a
+   scrollable block clips one away: both carry the cue inside themselves. */
+.mdpd-plain tr.mdpd-commentable::before,
+.mdpd-plain pre.mdpd-commentable::before {
+  content: none;
+}
+
+.mdpd-plain tr.mdpd-commentable > td:first-child,
+.mdpd-plain tr.mdpd-commentable > th:first-child,
+.mdpd-plain pre.mdpd-commentable {
+  box-shadow: inset 3px 0 0 var(--mdpd-border);
+}
+
+.mdpd-plain tr.mdpd-commentable:hover > td:first-child,
+.mdpd-plain tr.mdpd-commentable:hover > th:first-child,
+.mdpd-plain pre.mdpd-commentable:hover {
+  box-shadow: inset 3px 0 0 var(--mdpd-accent);
+}

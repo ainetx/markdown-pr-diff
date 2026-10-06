@@ -12,6 +12,7 @@ installChromeShim();
 import overlayCss from '../src/overlay/styles.css?inline';
 import { renderDiff } from '@core/renderDiff';
 import { createSideBySide } from '@overlay/sideBySide';
+import { createDocumentView } from '@overlay/document';
 import { createUnified } from '@overlay/unified';
 import { createThreadLayer, type ThreadActions, type ThreadLayer } from '@overlay/threads';
 import type { DiffView } from '@overlay/view';
@@ -111,21 +112,23 @@ function show(): void {
   outdatedHost.hidden = true;
 
   view =
-    layoutSelect.value === 'unified'
-      ? createUnified({
-          oldDoc: rendered.oldPane,
-          newDoc: rendered.newPane,
-          regions: rendered.diff.regions,
-          oldLineCount: rendered.diff.oldLineCount,
-        })
-      : createSideBySide({
-          oldDoc: rendered.oldPane,
-          newDoc: rendered.newPane,
-          oldLabel: 'Base',
-          newLabel: 'Head',
-          regions: rendered.diff.regions,
-          oldLineCount: rendered.diff.oldLineCount,
-        });
+    layoutSelect.value === 'document'
+      ? createDocumentView({ content: rendered.newPane, side: 'new', label: 'Head' })
+      : layoutSelect.value === 'unified'
+        ? createUnified({
+            oldDoc: rendered.oldPane,
+            newDoc: rendered.newPane,
+            regions: rendered.diff.regions,
+            oldLineCount: rendered.diff.oldLineCount,
+          })
+        : createSideBySide({
+            oldDoc: rendered.oldPane,
+            newDoc: rendered.newPane,
+            oldLabel: 'Base',
+            newLabel: 'Head',
+            regions: rendered.diff.regions,
+            oldLineCount: rendered.diff.oldLineCount,
+          });
 
   content.appendChild(view.root);
   shell.append(content, outdatedHost);
@@ -209,7 +212,9 @@ function applyQuery(): void {
   const fixture = params.get('fixture');
   if (fixture && fixtures.some((f) => f.name === fixture)) fixtureSelect.value = fixture;
   const layout = params.get('layout');
-  if (layout === 'unified' || layout === 'side-by-side') layoutSelect.value = layout;
+  if (layout === 'unified' || layout === 'side-by-side' || layout === 'document') {
+    layoutSelect.value = layout;
+  }
   const theme = params.get('theme');
   if (theme === 'dark' || theme === 'light') themeSelect.value = theme;
   const comments = params.get('comments');

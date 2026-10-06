@@ -23,6 +23,10 @@ a document that way means reading syntax instead of reading the document.
   individually.
 - **Unified layout** as an alternative, with the before and after of each
   changed block shown in sequence.
+- **A reading view**: the file as it will look once merged, with no diff
+  colouring at all — but still reviewable. Every block a comment can be
+  anchored to is marked in the gutter, so what is available is visible
+  without sweeping the pointer across the page.
 - **Review comments in place** — existing threads appear under the paragraph,
   row or item they are about. Reply, start a new comment on any block, resolve,
   edit and delete, all without leaving the window.

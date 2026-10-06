@@ -51,6 +51,7 @@ function fakeView(rendered: RenderedDiff): DiffView {
     root,
     scrollerFor: (side) => scrollers[side],
     docFor: (side) => (side === 'old' ? rendered.oldPane : rendered.newPane),
+    sideFor: (block) => (rendered.oldPane.contains(block) ? 'old' : 'new'),
     refresh: () => undefined,
     goToChange: () => undefined,
     destroy: () => root.remove(),
@@ -425,7 +426,9 @@ describe('the button never points somewhere it cannot comment', () => {
   });
 
   function deepest(view: DiffView, line: number): HTMLElement {
-    const all = [...view.docFor('new').querySelectorAll<HTMLElement>(`[data-line-start="${line}"]`)];
+    const all = [
+      ...view.docFor('new').querySelectorAll<HTMLElement>(`[data-line-start="${line}"]`),
+    ];
     return all.find((el) => el.querySelector('[data-line-start]') === null) ?? all[0]!;
   }
 
@@ -509,5 +512,38 @@ describe('the toggle reflects what is on screen', () => {
     layer.render([]);
     expect(addButton(view).textContent).toBe('+');
     expect(document.querySelector('.mdpd-thread-new')).toBeNull();
+  });
+});
+
+describe('marking where a comment can go', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.replaceChildren();
+  });
+
+  it('marks commentable blocks in the document itself', () => {
+    // In the reading view there is no diff colouring to go by, so the places
+    // that accept a comment have to be visible without hovering.
+    const { view, layer } = setup({ left: [], right: [3] });
+    layer.render([]);
+
+    const marked = [...view.docFor('new').querySelectorAll('.mdpd-commentable')];
+    expect(marked.length).toBeGreaterThan(0);
+    expect(marked.every((el) => el.hasAttribute('data-line-start'))).toBe(true);
+  });
+
+  it('marks nothing when no line of the file is in the diff', () => {
+    const { view, layer } = setup({ left: [], right: [] });
+    layer.render([]);
+    expect(view.docFor('new').querySelectorAll('.mdpd-commentable')).toHaveLength(0);
+  });
+
+  it('takes its marks back on destroy', () => {
+    const { view, layer } = setup();
+    layer.render([]);
+    expect(view.root.querySelectorAll('.mdpd-commentable').length).toBeGreaterThan(0);
+
+    layer.destroy();
+    expect(view.root.querySelectorAll('.mdpd-commentable')).toHaveLength(0);
   });
 });

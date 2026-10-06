@@ -130,6 +130,9 @@ export function createUnified(options: UnifiedOptions): DiffView {
     refresh: () => undefined,
     scrollerFor: (_side: Side) => scroller,
     docFor: (_side: Side) => column,
+    // One column holds both versions: a removed block is the base, the rest
+    // is the head.
+    sideFor: (block: HTMLElement) => (block.closest(`.${REMOVED_CLASS}`) ? 'old' : 'new'),
     destroy() {
       root.remove();
     },

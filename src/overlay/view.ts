@@ -11,6 +11,15 @@ export interface DiffView {
   scrollerFor(side: Side): HTMLElement;
   /** The rendered document for a side — where thread cards get inserted. */
   docFor(side: Side): HTMLElement;
+  /**
+   * Which version of the file a rendered block came from.
+   *
+   * Only the side-by-side layout can answer this from the pane alone. Where
+   * one column carries both versions, or only one of them, the layout is the
+   * only thing that knows — and getting it wrong anchors a comment to the
+   * other side's line numbers.
+   */
+  sideFor(block: HTMLElement): Side;
   refresh(): void;
   goToChange(direction: 1 | -1): void;
   destroy(): void;

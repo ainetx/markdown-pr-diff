@@ -7,7 +7,11 @@
 
 import { DOT_COM } from './githubHost';
 
-export type Layout = 'side-by-side' | 'unified';
+/**
+ * `document` is the reading view: one version, no diff colouring, but still
+ * commentable — for reviewing the result rather than the change.
+ */
+export type Layout = 'side-by-side' | 'unified' | 'document';
 
 export interface EnterpriseHost {
   host: string;

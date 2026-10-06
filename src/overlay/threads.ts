@@ -17,12 +17,12 @@ import { diffSideToSide, type Side } from '@core/types';
 import type { NewCommentInput, ReviewComment, ReviewThread } from '@shared/github';
 import { createComposer } from './composer';
 import type { DraftKey } from './drafts';
-import { REMOVED_CLASS } from '@core/classify';
 import type { DiffView } from './view';
 
 const THREAD_CLASS = 'mdpd-thread';
 const BADGE_CLASS = 'mdpd-comment-badge';
 const ADD_BUTTON_CLASS = 'mdpd-add-comment';
+const COMMENTABLE_CLASS = 'mdpd-commentable';
 
 export interface ThreadActions {
   canWrite: boolean;
@@ -127,6 +127,8 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
   }
   /** Redraws the add button for whichever block it is sitting on. */
   const refreshAddButtons: (() => void)[] = [];
+  /** Re-measures a pane and re-applies its commentable marks. */
+  const remeasure: (() => void)[] = [];
 
   const commentableBySide: Record<Side, Set<number>> = {
     old: new Set(options.commentable.left),
@@ -375,23 +377,6 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
 
   // ------------------------------------------------- new-comment affordance
 
-  /** True when one column shows both versions, as the unified layout does. */
-  const sharedColumn = view.docFor('old') === view.docFor('new');
-
-  /**
-   * Which side of the diff a block belongs to.
-   *
-   * In the unified layout a single column holds both versions, so the side
-   * cannot come from the pane: a removed block is the base version, anything
-   * else is the head. Taking it from the pane there meant head blocks were
-   * checked against base line numbers, and the comment was anchored wrongly
-   * or refused outright.
-   */
-  function sideOf(block: HTMLElement, fallback: Side): Side {
-    if (!sharedColumn) return fallback;
-    return block.closest(`.${REMOVED_CLASS}`) !== null ? 'old' : 'new';
-  }
-
   function attachAddButtons(): void {
     if (!actions.canWrite) return;
     for (const side of ['old', 'new'] as const) {
@@ -438,13 +423,13 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
 
         bands = candidates.map((el) => {
           const box = el.getBoundingClientRect();
-          return {
-            el,
-            top: box.top - scrollerTop,
-            bottom: box.bottom - scrollerTop,
-            commentable:
-              commentableSpan(sideOf(el, side), readRange(el) ?? { start: 0, end: -1 }) !== null,
-          };
+          const commentable =
+            commentableSpan(view.sideFor(el), readRange(el) ?? { start: 0, end: -1 }) !== null;
+          // Marked in the document itself, not only on hover: in the reading
+          // view there is no colouring to go by, so where a comment can go
+          // has to be visible without sweeping the pointer over the page.
+          el.classList.toggle(COMMENTABLE_CLASS, commentable);
+          return { el, top: box.top - scrollerTop, bottom: box.bottom - scrollerTop, commentable };
         });
         return bands;
       }
@@ -540,6 +525,14 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
 
       teardown.push(() => resize?.disconnect());
 
+      // The marks are a property of the document, not of hovering it, so they
+      // are applied when the pane is rendered rather than on first pointer
+      // movement.
+      remeasure.push(() => {
+        bands = null;
+        measure();
+      });
+
       /** The button is a toggle: it opens the composer, then closes it again. */
       function paint() {
         const open = composerOpenFor(target);
@@ -559,7 +552,7 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
           openComposer?.destroy();
           return;
         }
-        startNewComment(sideOf(target, side), target);
+        startNewComment(view.sideFor(target), target);
       });
     }
   }
@@ -635,6 +628,7 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
       }
       renderOutdated(orphans);
       attachAddButtons();
+      for (const apply of remeasure) apply();
     },
 
     setVisible(next: boolean): void {
@@ -648,6 +642,10 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
 
     destroy(): void {
       clear();
+      for (const marked of view.root.querySelectorAll(`.${COMMENTABLE_CLASS}`)) {
+        marked.classList.remove(COMMENTABLE_CLASS);
+      }
+      remeasure.length = 0;
       for (const release of teardown.splice(0)) release();
       for (const button of view.root.querySelectorAll(`.${ADD_BUTTON_CLASS}`)) button.remove();
     },
