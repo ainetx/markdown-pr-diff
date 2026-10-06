@@ -2,6 +2,14 @@ MIT License
 
 Copyright (c) 2026 Markdown PR Diff contributors
 
+Parts of this project are derived from other MIT-licensed work and carry their
+own copyright notices. Those notices must be preserved along with this one;
+NOTICE names the files and the projects they came from. Everything else is
+covered by the notice above.
+
+Both are MIT, so the terms are identical either way — only the names in the
+copyright lines differ.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
