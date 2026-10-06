@@ -13,6 +13,7 @@ import overlayCss from '../src/overlay/styles.css?inline';
 import { renderDiff } from '@core/renderDiff';
 import { createSideBySide } from '@overlay/sideBySide';
 import { createDocumentView } from '@overlay/document';
+import { createSegmentedControl } from '@overlay/segmented';
 import { createUnified } from '@overlay/unified';
 import { createThreadLayer, type ThreadActions, type ThreadLayer } from '@overlay/threads';
 import type { DiffView } from '@overlay/view';
@@ -49,7 +50,35 @@ function collectFixtures(): Fixture[] {
 const fixtures = collectFixtures();
 
 const fixtureSelect = document.querySelector<HTMLSelectElement>('#fixture')!;
-const layoutSelect = document.querySelector<HTMLSelectElement>('#layout')!;
+type Layout = 'side-by-side' | 'unified' | 'document';
+let layout: Layout = 'side-by-side';
+
+// The harness drives the real control, so what is exercised here is what ships.
+const layoutControl = createSegmentedControl<Layout>({
+  doc: document,
+  label: 'Layout',
+  segments: [
+    { value: 'side-by-side', glyph: '⇆', label: 'Side by side' },
+    { value: 'unified', glyph: '≡', label: 'Unified' },
+    { value: 'document', glyph: '▤', label: 'Reading view' },
+  ],
+  value: layout,
+  onChange: (next) => {
+    layout = next;
+    syncQuery();
+    show();
+  },
+});
+// The control lives in the page here rather than in a shadow root, so the
+// overlay stylesheet is applied to the document too. `.md-pr-diff-root`
+// carries the custom properties that `:host` provides inside the overlay.
+const harnessStyles = document.createElement('style');
+harnessStyles.textContent = overlayCss;
+document.head.appendChild(harnessStyles);
+
+const controlHost = document.querySelector('#layout-control')!;
+controlHost.classList.add('md-pr-diff-root');
+controlHost.appendChild(layoutControl.root);
 const themeSelect = document.querySelector<HTMLSelectElement>('#theme')!;
 const commentsToggle = document.querySelector<HTMLInputElement>('#comments')!;
 const statsEl = document.querySelector<HTMLElement>('#stats')!;
@@ -112,9 +141,9 @@ function show(): void {
   outdatedHost.hidden = true;
 
   view =
-    layoutSelect.value === 'document'
+    layout === 'document'
       ? createDocumentView({ content: rendered.newPane, side: 'new', label: 'Head' })
-      : layoutSelect.value === 'unified'
+      : layout === 'unified'
         ? createUnified({
             oldDoc: rendered.oldPane,
             newDoc: rendered.newPane,
@@ -211,9 +240,10 @@ function applyQuery(): void {
   const params = new URLSearchParams(location.search);
   const fixture = params.get('fixture');
   if (fixture && fixtures.some((f) => f.name === fixture)) fixtureSelect.value = fixture;
-  const layout = params.get('layout');
-  if (layout === 'unified' || layout === 'side-by-side' || layout === 'document') {
-    layoutSelect.value = layout;
+  const wanted = params.get('layout');
+  if (wanted === 'unified' || wanted === 'side-by-side' || wanted === 'document') {
+    layout = wanted;
+    layoutControl.setValue(wanted);
   }
   const theme = params.get('theme');
   if (theme === 'dark' || theme === 'light') themeSelect.value = theme;
@@ -224,7 +254,7 @@ function applyQuery(): void {
 function syncQuery(): void {
   const params = new URLSearchParams({
     fixture: fixtureSelect.value,
-    layout: layoutSelect.value,
+    layout,
     theme: themeSelect.value,
     comments: commentsToggle.checked ? 'on' : 'off',
   });
@@ -232,10 +262,6 @@ function syncQuery(): void {
 }
 
 fixtureSelect.addEventListener('change', () => {
-  syncQuery();
-  show();
-});
-layoutSelect.addEventListener('change', () => {
   syncQuery();
   show();
 });

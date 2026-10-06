@@ -15,6 +15,7 @@ import type { Layout, Settings } from '@shared/settings';
 import { saveSettings } from '@shared/settings';
 import { containKeyboardEvents } from './keyboard';
 import { createDocumentView } from './document';
+import { createSegmentedControl } from './segmented';
 import { createSideBySide } from './sideBySide';
 import { createThreadLayer, type ThreadActions, type ThreadLayer } from './threads';
 import { createUnified } from './unified';
@@ -29,24 +30,12 @@ export interface OverlayOptions {
   settings: Settings;
 }
 
-/** The layouts, in the order the toolbar button cycles through them. */
-const LAYOUTS: Record<Layout, { glyph: string; title: string; next: Layout }> = {
-  'side-by-side': {
-    glyph: '⇆',
-    title: 'Side by side — click for unified',
-    next: 'unified',
-  },
-  unified: {
-    glyph: '≡',
-    title: 'Unified — click to read the document',
-    next: 'document',
-  },
-  document: {
-    glyph: '▤',
-    title: 'Reading view, no diff colouring — click for side by side',
-    next: 'side-by-side',
-  },
-};
+/** The layouts, in the order they appear in the toolbar. */
+const LAYOUTS = [
+  { value: 'side-by-side', glyph: '⇆', label: 'Side by side' },
+  { value: 'unified', glyph: '≡', label: 'Unified' },
+  { value: 'document', glyph: '▤', label: 'Reading view, no diff colouring' },
+] as const satisfies readonly { value: Layout; glyph: string; label: string }[];
 
 function detectTheme(): 'light' | 'dark' {
   const mode = document.documentElement.getAttribute('data-color-mode');
@@ -122,12 +111,24 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   const stats = doc.createElement('span');
   stats.className = 'mdpd-stat';
 
-  const layoutBtn = button(doc, '⇆', 'Switch layout');
+
   const commentsBtn = button(doc, '💬', 'Show or hide review comments');
   const prevBtn = button(doc, '↑', 'Previous change');
   const nextBtn = button(doc, '↓', 'Next change');
   const openBtn = button(doc, '⧉', 'Open this file on GitHub');
   const closeBtn = button(doc, '✕', 'Close (Esc)');
+
+  const layoutControl = createSegmentedControl<Layout>({
+    doc,
+    label: 'Layout',
+    segments: LAYOUTS,
+    value: layout,
+    onChange: (next) => {
+      layout = next;
+      void saveSettings({ layout });
+      renderBody();
+    },
+  });
 
   const chip = doc.createElement('span');
   chip.className = 'mdpd-chip';
@@ -155,7 +156,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     chip,
     authChip,
     stats,
-    layoutBtn,
+    layoutControl.root,
     commentsBtn,
     prevBtn,
     nextBtn,
@@ -316,9 +317,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     removed.textContent = `−${rendered.stats.removed + rendered.stats.modified}`;
     stats.append(added, doc.createTextNode(' '), removed);
 
-    layoutBtn.textContent = LAYOUTS[layout].glyph;
-    layoutBtn.title = LAYOUTS[layout].title;
-    layoutBtn.setAttribute('aria-pressed', String(layout !== 'side-by-side'));
+    layoutControl.setValue(layout);
     commentsBtn.setAttribute('aria-pressed', String(commentsVisible));
 
     threadLayer = createThreadLayer({
@@ -344,11 +343,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
 
   // ---------------------------------------------------------- wiring
 
-  layoutBtn.addEventListener('click', () => {
-    layout = LAYOUTS[layout].next;
-    void saveSettings({ layout });
-    renderBody();
-  });
+
 
   commentsBtn.addEventListener('click', () => {
     commentsVisible = !commentsVisible;
