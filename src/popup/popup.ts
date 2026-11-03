@@ -101,7 +101,7 @@ async function describeEnvironment(url: string | undefined): Promise<Environment
 
 interface DiagnosisReport {
   url: string;
-  isFilesPage: boolean;
+  pageKind: 'pull' | 'commit' | 'other';
   candidates: { path: string; carrier: string; headerTag: string }[];
   blocks: { path: string; headerOuterHtml: string }[];
 }
@@ -126,7 +126,7 @@ function summarize(
   }
 
   lines.push(
-    `files page: ${report.isFilesPage ? 'yes' : 'no'}`,
+    `page: ${report.pageKind}`,
     `markdown paths found: ${report.candidates.length}`,
     `file headers resolved: ${report.blocks.length}`,
   );

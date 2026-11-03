@@ -8,14 +8,17 @@
  * the worker checks and repairs what it can, and flags what it cannot.
  */
 
-const PR_PATH = /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)/;
+const DIFF_PATHS = [
+  /^\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)/,
+  /^\/[^/]+\/[^/]+\/commit\/[0-9a-f]{7,40}$/i,
+];
 
-function isPullRequestUrl(url: string | undefined): URL | null {
+function isDiffUrl(url: string | undefined): URL | null {
   if (!url) return null;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') return null;
-    return PR_PATH.test(parsed.pathname) ? parsed : null;
+    return DIFF_PATHS.some((pattern) => pattern.test(parsed.pathname)) ? parsed : null;
   } catch {
     return null;
   }
@@ -55,7 +58,7 @@ async function isRunning(tabId: number): Promise<boolean> {
  * granted access to the host.
  */
 export async function ensureContentScript(tabId: number, url: string | undefined): Promise<void> {
-  const parsed = isPullRequestUrl(url);
+  const parsed = isDiffUrl(url);
   if (!parsed) return;
 
   const origin = `${parsed.origin}/*`;

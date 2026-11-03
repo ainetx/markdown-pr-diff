@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChangedFile, PullRequestInfo } from '@shared/github';
+import type { ChangedFile, DiffTarget } from '@shared/github';
 
 vi.mock('../../src/background/tokenStore', () => ({
   getToken: async () => 'gho_test',
@@ -41,7 +41,8 @@ async function api() {
   return import('../../src/background/api');
 }
 
-const PR: PullRequestInfo = {
+const PR: DiffTarget = {
+  kind: 'pull',
   host: 'github.com',
   owner: 'own',
   repo: 'repo',
@@ -323,5 +324,188 @@ describe('scope reporting', () => {
     const viewer = await getViewer('github.com');
     expect(viewer.scopes).toEqual([]);
     expect(missingScopes(viewer)).toEqual([]);
+  });
+});
+
+// ------------------------------------------------------------------ commits
+
+const COMMIT_SHA = 'c5d7dbdde8d8739012cf48187511641f732548b8';
+
+/**
+ * Two context lines, one removal and one addition, so every branch of the
+ * position walk is exercised by the endpoint tests as well.
+ */
+const COMMIT_PATCH = ['@@ -1,3 +1,3 @@', ' intro', '-was', '+is', ' outro'].join('\n');
+
+const COMMIT_BODY = JSON.stringify({
+  sha: COMMIT_SHA,
+  commit: { message: 'Describe design decisions\n\nLonger body.' },
+  parents: [{ sha: '629ae3df6350476cd8161df16c608226c2cb831c' }],
+  files: [
+    {
+      filename: 'docs/DESIGN.md',
+      status: 'modified',
+      additions: 1,
+      deletions: 1,
+      patch: COMMIT_PATCH,
+    },
+  ],
+});
+
+describe('commits as a diff target', () => {
+  it('takes the parent as the base and the subject as the title', async () => {
+    respond(() => ({ body: COMMIT_BODY }));
+    const { getCommit } = await api();
+
+    const target = await getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+
+    expect(target).toMatchObject({
+      kind: 'commit',
+      number: null,
+      title: 'Describe design decisions',
+      baseSha: '629ae3df6350476cd8161df16c608226c2cb831c',
+      headSha: COMMIT_SHA,
+    });
+  });
+
+  it('reads a root commit as an empty base rather than failing', async () => {
+    respond(() => ({ body: JSON.stringify({ ...JSON.parse(COMMIT_BODY), parents: [] }) }));
+    const { getCommit } = await api();
+
+    expect((await getCommit('github.com', 'own', 'repo', COMMIT_SHA)).baseSha).toBe('');
+  });
+
+  it('serves the target and the file list from one request', async () => {
+    respond(() => ({ body: COMMIT_BODY }));
+    const module = await api();
+
+    await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+    const files = await module.listCommitFiles('github.com', 'own', 'repo', COMMIT_SHA);
+
+    expect(files).toEqual([
+      {
+        path: 'docs/DESIGN.md',
+        previousPath: null,
+        status: 'modified',
+        additions: 1,
+        deletions: 1,
+      },
+    ]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('posts a comment to the commit, addressed by diff position', async () => {
+    respond(() => ({ body: COMMIT_BODY }));
+    const module = await api();
+    const target = await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+    calls = [];
+
+    await module.createReviewComment(target, {
+      path: 'docs/DESIGN.md',
+      side: 'RIGHT',
+      line: 2,
+      body: 'Why the change?',
+    });
+
+    const post = calls.find((call) => call.method === 'POST')!;
+    expect(post.url).toBe(`https://api.github.com/repos/own/repo/commits/${COMMIT_SHA}/comments`);
+    // RIGHT line 2 is the added line, third down from the hunk header.
+    expect(post.body).toEqual({ body: 'Why the change?', path: 'docs/DESIGN.md', position: 3 });
+  });
+
+  it('refuses a line the commit does not touch instead of letting GitHub 422', async () => {
+    respond(() => ({ body: COMMIT_BODY }));
+    const module = await api();
+    const target = await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+
+    await expect(
+      module.createReviewComment(target, {
+        path: 'docs/DESIGN.md',
+        side: 'RIGHT',
+        line: 99,
+        body: 'x',
+      }),
+    ).rejects.toMatchObject({ kind: 'invalid' });
+  });
+
+  it('edits and deletes through the repository comment path, not the pulls one', async () => {
+    respond(() => ({ body: COMMIT_BODY }));
+    const module = await api();
+    const target = await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+    calls = [];
+
+    await module.updateComment(target, 42, 'edited');
+    await module.deleteComment(target, 42);
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'PATCH https://api.github.com/repos/own/repo/comments/42',
+      'DELETE https://api.github.com/repos/own/repo/comments/42',
+    ]);
+  });
+
+  it('says plainly that commit comments have no replies', async () => {
+    respond(() => ({ body: COMMIT_BODY }));
+    const module = await api();
+    const target = await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+
+    await expect(module.replyToComment(target, 42, 'hi')).rejects.toThrow(/flat list/);
+  });
+
+  it('places a commit comment on the line its position resolves to', async () => {
+    respond((call) =>
+      call.url.endsWith('/comments?per_page=100&page=1')
+        ? {
+            body: JSON.stringify([
+              {
+                id: 7,
+                node_id: 'NODE7',
+                path: 'docs/DESIGN.md',
+                position: 3,
+                body: 'note',
+                created_at: '2026-01-01T00:00:00Z',
+                html_url: 'https://github.com/own/repo/commit/x#c7',
+                user: { login: 'octocat', avatar_url: 'a', html_url: 'u' },
+              },
+            ]),
+          }
+        : { body: COMMIT_BODY },
+    );
+    const module = await api();
+    const target = await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+
+    const threads = await module.listComments(target, 'docs/DESIGN.md');
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]).toMatchObject({ line: 2, side: 'RIGHT', isOutdated: false });
+    // No replies and no resolving: the overlay hides both when it sees this.
+    expect(threads[0]!.viewerCanResolve).toBe(false);
+    expect(threads[0]!.comments).toHaveLength(1);
+  });
+
+  it('treats a comment whose position no longer resolves as outdated', async () => {
+    respond((call) =>
+      call.url.endsWith('/comments?per_page=100&page=1')
+        ? {
+            body: JSON.stringify([
+              {
+                id: 8,
+                node_id: 'NODE8',
+                path: 'docs/DESIGN.md',
+                position: null,
+                body: 'stale',
+                created_at: '2026-01-01T00:00:00Z',
+                html_url: 'https://github.com/own/repo/commit/x#c8',
+                user: null,
+              },
+            ]),
+          }
+        : { body: COMMIT_BODY },
+    );
+    const module = await api();
+    const target = await module.getCommit('github.com', 'own', 'repo', COMMIT_SHA);
+
+    const threads = await module.listComments(target, 'docs/DESIGN.md');
+
+    expect(threads[0]).toMatchObject({ line: null, isOutdated: true });
   });
 });

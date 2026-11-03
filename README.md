@@ -32,6 +32,11 @@ a document that way means reading syntax instead of reading the document.
 - **Review comments in place** — existing threads appear under the paragraph,
   row or item they are about. Reply, start a new comment on any block, resolve,
   edit and delete, all without leaving the window.
+- **Commits as well as pull requests.** A commit page gets the same button, and
+  the diff is the commit against its parent. Comments there are commit
+  comments, which GitHub keeps as a flat list addressed by position in the
+  diff — so reading, writing, editing and deleting all work, while replies and
+  resolving are absent because GitHub has neither for them.
 - **A scrollbar minimap** and prev/next change navigation.
 - **Light, dark and dimmed** themes, following whatever GitHub is set to.
 
@@ -164,6 +169,13 @@ done on GitHub, and the options page links straight to it.
 - A new comment is anchored to the block it was started from, so a block
   spanning several lines produces a multi-line comment. Selecting a range
   across several blocks is not supported yet.
+- A pull request's own per-commit page (`/pull/N/commits/<sha>`) is not covered.
+  Its comments are review comments on the pull request rather than commit
+  comments, so it needs the pull request's coordinates, not the commit's —
+  treating it as a plain commit would file comments in the wrong place.
+- A commit comment carries no multi-line range: GitHub addresses it by a single
+  position in the diff, so a comment started on a multi-line block lands on the
+  block's last changed line.
 - The content script carries the renderer (~295 KB minified) and so loads on
   every github.com page, not only pull requests. Moving the overlay into an
   extension-page iframe would shrink it to a few kilobytes; it has not been

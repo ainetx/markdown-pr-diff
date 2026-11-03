@@ -94,6 +94,7 @@ for (const fixture of fixtures) {
 /** In the playground every write is a no-op that just logs what would happen. */
 const actions: ThreadActions = {
   canWrite: true,
+  canReply: true,
   readOnlyReason: '',
   reply: async (thread, body) => void console.warn('reply', thread.id, body),
   create: async (input) => void console.warn('create', input),
@@ -179,7 +180,7 @@ function show(): void {
       host: 'github.com',
       owner: 'example',
       repo: 'repo',
-      number: 1,
+      ref: 'pull/1',
       path: fixture.name,
     },
     actions,

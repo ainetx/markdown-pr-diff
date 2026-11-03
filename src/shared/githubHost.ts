@@ -71,6 +71,11 @@ export function pullRequestDiffUrl(
   return `${gh.web}/${owner}/${repo}/pull/${number}.diff`;
 }
 
+/** The same for a single commit. */
+export function commitDiffUrl(gh: GitHubHost, owner: string, repo: string, sha: string): string {
+  return `${gh.web}/${owner}/${repo}/commit/${sha}.diff`;
+}
+
 /** Base URL that relative asset references in a file resolve against. */
 export function assetBase(
   gh: GitHubHost,
@@ -113,6 +118,34 @@ export function parsePullRequestUrl(url: string | URL): PullRequestRef | null {
     owner: match[1]!,
     repo: match[2]!,
     number: Number(match[3]),
+  };
+}
+
+export interface CommitRef {
+  host: string;
+  owner: string;
+  repo: string;
+  sha: string;
+}
+
+/**
+ * Parses a commit location such as /owner/repo/commit/<sha>.
+ *
+ * Deliberately not /owner/repo/pull/42/commits/<sha>: that page shows one
+ * commit of a pull request, and its comments are review comments on the pull
+ * request rather than commit comments, so treating it as a bare commit would
+ * post to the wrong place.
+ */
+export function parseCommitUrl(url: string | URL): CommitRef | null {
+  const parsed = typeof url === 'string' ? safeUrl(url) : url;
+  if (!parsed) return null;
+  const match = /^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]{7,40})(?:\/|$)/i.exec(parsed.pathname);
+  if (!match) return null;
+  return {
+    host: parsed.hostname,
+    owner: match[1]!,
+    repo: match[2]!,
+    sha: match[3]!,
   };
 }
 

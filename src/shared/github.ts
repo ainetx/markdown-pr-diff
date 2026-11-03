@@ -9,17 +9,48 @@ import type { DiffSide } from '@core/types';
 
 export type FileStatus = 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed';
 
-export interface PullRequestInfo {
+/**
+ * What is being diffed.
+ *
+ * A pull request and a single commit are the same thing to everything that
+ * renders: two revisions of one repository. They part company only at
+ * comments, where GitHub offers review threads for one and a flat list keyed
+ * by diff position for the other — so the kind is carried along rather than
+ * inferred from whether `number` happens to be set.
+ */
+export type DiffTargetKind = 'pull' | 'commit';
+
+export interface DiffTarget {
+  kind: DiffTargetKind;
   host: string;
   owner: string;
   repo: string;
-  number: number;
+  /** Pull request number; null for a commit. */
+  number: number | null;
   title: string;
   baseSha: string;
   headSha: string;
   /** Head may live in a fork; raw content has to be fetched from there. */
   headOwner: string;
   headRepo: string;
+}
+
+/** Short identity of a target, used for storage keys and for the title. */
+export function refOf(target: DiffTarget): string {
+  return target.kind === 'pull' ? `pull/${String(target.number)}` : target.headSha;
+}
+
+/** What to call each side of the diff, which differs by kind. */
+export function sideLabels(target: DiffTarget): { base: string; head: string } {
+  const short = (sha: string) => sha.slice(0, 7);
+  return target.kind === 'pull'
+    ? { base: `Base · ${short(target.baseSha)}`, head: `Head · ${short(target.headSha)}` }
+    : {
+        // "Base" means the merge base of a pull request; for a commit the left
+        // side is simply its parent, and saying so avoids implying otherwise.
+        base: target.baseSha ? `Parent · ${short(target.baseSha)}` : 'No parent',
+        head: `Commit · ${short(target.headSha)}`,
+      };
 }
 
 export interface ChangedFile {
@@ -66,7 +97,7 @@ export interface ReviewThread {
 }
 
 export interface FileDiffPayload {
-  pullRequest: PullRequestInfo;
+  target: DiffTarget;
   file: ChangedFile;
   baseText: string;
   headText: string;

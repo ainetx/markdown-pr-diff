@@ -231,8 +231,23 @@ export function findMarkdownFileBlocks(root: ParentNode = document): FileBlock[]
   return [...byPath.values()];
 }
 
+/**
+ * Pages that show a diff this extension can act on.
+ *
+ * A pull request's changed-files tab and a commit page carry the same file
+ * headers, so the same scan finds the same blocks on both; only the question
+ * of what the two sides are differs, and that is settled elsewhere.
+ */
+export function isDiffPage(url: string = location.href): boolean {
+  return isPullRequestFilesPage(url) || isCommitPage(url);
+}
+
 export function isPullRequestFilesPage(url: string = location.href): boolean {
   return /\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)/.test(url);
+}
+
+export function isCommitPage(url: string = location.href): boolean {
+  return /\/[^/]+\/[^/]+\/commit\/[0-9a-f]{7,40}(?:[/?#]|$)/i.test(url);
 }
 
 // ------------------------------------------------------------- diagnostics
@@ -248,7 +263,8 @@ export interface PageSample {
 
 export interface LocateReport {
   url: string;
-  isFilesPage: boolean;
+  /** What kind of diff page this is, if any. */
+  pageKind: 'pull' | 'commit' | 'other';
   candidates: { path: string; carrier: string; headerTag: string }[];
   blocks: { path: string; headerOuterHtml: string }[];
   /** Raw markup around markdown mentions, for when the selectors find nothing. */
@@ -274,7 +290,7 @@ export function describePage(root: ParentNode = document): LocateReport {
 
   return {
     url: location.href,
-    isFilesPage: isPullRequestFilesPage(),
+    pageKind: isPullRequestFilesPage() ? 'pull' : isCommitPage() ? 'commit' : 'other',
     candidates,
     blocks,
     samples: markdownMentions(root),

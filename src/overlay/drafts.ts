@@ -12,14 +12,15 @@ export interface DraftKey {
   host: string;
   owner: string;
   repo: string;
-  number: number;
+  /** Pull request number or commit sha — whichever identifies this diff. */
+  ref: string;
   path: string;
   /** Thread id for a reply, or `new:<side>:<line>` for a fresh comment. */
   slot: string;
 }
 
 function keyOf(key: DraftKey): string {
-  return `${PREFIX}${key.host}/${key.owner}/${key.repo}/${key.number}/${key.path}#${key.slot}`;
+  return `${PREFIX}${key.host}/${key.owner}/${key.repo}/${key.ref}/${key.path}#${key.slot}`;
 }
 
 export async function readDraft(key: DraftKey): Promise<string> {

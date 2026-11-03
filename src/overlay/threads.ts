@@ -28,6 +28,14 @@ export interface ThreadActions {
   canWrite: boolean;
   /** Why writing is unavailable, shown in place of the composer. */
   readOnlyReason: string;
+  /**
+   * Whether replies exist for this kind of target at all.
+   *
+   * Commit comments are a flat list: GitHub offers no reply, so offering one
+   * here would only produce a failure at submit time. Commenting on the line
+   * again is the equivalent, and that is still available.
+   */
+  canReply: boolean;
   reply(thread: ReviewThread, body: string): Promise<void>;
   create(input: NewCommentInput): Promise<void>;
   setResolved(thread: ReviewThread, resolved: boolean): Promise<void>;
@@ -322,7 +330,7 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
 
     for (const comment of thread.comments) bodyWrap.appendChild(renderComment(thread, comment));
 
-    if (actions.canWrite) {
+    if (actions.canWrite && actions.canReply) {
       const replyBtn = el(doc, 'button', 'mdpd-btn', 'Reply');
       replyBtn.type = 'button';
       replyBtn.addEventListener('click', () => {
@@ -345,7 +353,7 @@ export function createThreadLayer(options: ThreadLayerOptions): ThreadLayer {
         composer.focus();
       });
       bodyWrap.appendChild(replyBtn);
-    } else {
+    } else if (!actions.canWrite) {
       bodyWrap.appendChild(el(doc, 'div', 'mdpd-hint', actions.readOnlyReason));
     }
 

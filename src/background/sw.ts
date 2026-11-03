@@ -12,9 +12,11 @@ import {
   createReviewComment,
   deleteComment,
   getFileDiff,
+  getCommit,
   getPullRequest,
+  listCommitFiles,
   listPullRequestFiles,
-  listReviewThreads,
+  listComments,
   addReaction,
   replyToComment,
   setThreadResolved,
@@ -65,29 +67,37 @@ async function handle(request: Request): Promise<unknown> {
       const { host, owner, repo, number } = request.locator;
       return listPullRequestFiles(host, owner, repo, number);
     }
+    case 'commit:info': {
+      const { host, owner, repo, sha } = request.locator;
+      return getCommit(host, owner, repo, sha);
+    }
+    case 'commit:files': {
+      const { host, owner, repo, sha } = request.locator;
+      return listCommitFiles(host, owner, repo, sha);
+    }
     case 'pr:file-diff':
-      return getFileDiff(request.pullRequest, request.file);
+      return getFileDiff(request.target, request.file);
 
     case 'threads:list':
-      return listReviewThreads(request.pullRequest, request.path);
+      return listComments(request.target, request.path);
 
     case 'comment:create':
-      await createReviewComment(request.pullRequest, request.input);
+      await createReviewComment(request.target, request.input);
       return null;
     case 'comment:reply':
-      await replyToComment(request.pullRequest, request.replyTo, request.body);
+      await replyToComment(request.target, request.replyTo, request.body);
       return null;
     case 'comment:update':
-      await updateComment(request.pullRequest, request.databaseId, request.body);
+      await updateComment(request.target, request.databaseId, request.body);
       return null;
     case 'comment:delete':
-      await deleteComment(request.pullRequest, request.databaseId);
+      await deleteComment(request.target, request.databaseId);
       return null;
     case 'comment:react':
-      await addReaction(request.pullRequest, request.databaseId, request.content);
+      await addReaction(request.target, request.databaseId, request.content);
       return null;
     case 'thread:resolve':
-      await setThreadResolved(request.pullRequest, request.threadId, request.resolved);
+      await setThreadResolved(request.target, request.threadId, request.resolved);
       return null;
   }
 }

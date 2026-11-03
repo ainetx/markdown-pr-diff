@@ -11,7 +11,7 @@ import type {
   ChangedFile,
   FileDiffPayload,
   NewCommentInput,
-  PullRequestInfo,
+  DiffTarget,
   ReviewThread,
   ViewerInfo,
 } from './github';
@@ -24,6 +24,13 @@ export interface PrLocator {
   number: number;
 }
 
+export interface CommitLocator {
+  host: string;
+  owner: string;
+  repo: string;
+  sha: string;
+}
+
 export type Request =
   | { type: 'auth:status'; host: string }
   | { type: 'auth:manual-token'; host: string; token: string }
@@ -31,14 +38,16 @@ export type Request =
   | { type: 'hosts:sync' }
   | { type: 'pr:info'; locator: PrLocator }
   | { type: 'pr:files'; locator: PrLocator }
-  | { type: 'pr:file-diff'; pullRequest: PullRequestInfo; file: ChangedFile }
-  | { type: 'threads:list'; pullRequest: PullRequestInfo; path: string }
-  | { type: 'comment:create'; pullRequest: PullRequestInfo; input: NewCommentInput }
-  | { type: 'comment:reply'; pullRequest: PullRequestInfo; replyTo: number; body: string }
-  | { type: 'comment:update'; pullRequest: PullRequestInfo; databaseId: number; body: string }
-  | { type: 'comment:delete'; pullRequest: PullRequestInfo; databaseId: number }
-  | { type: 'comment:react'; pullRequest: PullRequestInfo; databaseId: number; content: string }
-  | { type: 'thread:resolve'; pullRequest: PullRequestInfo; threadId: string; resolved: boolean };
+  | { type: 'commit:info'; locator: CommitLocator }
+  | { type: 'commit:files'; locator: CommitLocator }
+  | { type: 'pr:file-diff'; target: DiffTarget; file: ChangedFile }
+  | { type: 'threads:list'; target: DiffTarget; path: string }
+  | { type: 'comment:create'; target: DiffTarget; input: NewCommentInput }
+  | { type: 'comment:reply'; target: DiffTarget; replyTo: number; body: string }
+  | { type: 'comment:update'; target: DiffTarget; databaseId: number; body: string }
+  | { type: 'comment:delete'; target: DiffTarget; databaseId: number }
+  | { type: 'comment:react'; target: DiffTarget; databaseId: number; content: string }
+  | { type: 'thread:resolve'; target: DiffTarget; threadId: string; resolved: boolean };
 
 export interface AuthStatus {
   connected: boolean;
@@ -57,8 +66,10 @@ export interface ResponseMap {
   'auth:manual-token': AuthStatus;
   'auth:disconnect': AuthStatus;
   'hosts:sync': null;
-  'pr:info': PullRequestInfo;
+  'pr:info': DiffTarget;
   'pr:files': ChangedFile[];
+  'commit:info': DiffTarget;
+  'commit:files': ChangedFile[];
   'pr:file-diff': FileDiffPayload;
   'threads:list': ReviewThread[];
   'comment:create': null;

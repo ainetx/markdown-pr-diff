@@ -3,6 +3,8 @@ import {
   describePage,
   findMarkdownFileBlocks,
   isMarkdownPath,
+  isCommitPage,
+  isDiffPage,
   isPullRequestFilesPage,
 } from '../../src/content/locate';
 
@@ -53,6 +55,29 @@ describe('isPullRequestFilesPage', () => {
   it('rejects other pull request tabs', () => {
     expect(isPullRequestFilesPage('https://github.com/o/r/pull/5216')).toBe(false);
     expect(isPullRequestFilesPage('https://github.com/o/r/commits')).toBe(false);
+  });
+});
+
+describe('isCommitPage', () => {
+  it('recognises a commit, abbreviated or full', () => {
+    expect(
+      isCommitPage('https://github.com/o/r/commit/c5d7dbdde8d8739012cf48187511641f732548b8'),
+    ).toBe(true);
+    expect(isCommitPage('https://github.com/o/r/commit/abc1234#diff-9')).toBe(true);
+  });
+
+  it('rejects the commit list and refs that are not shas', () => {
+    expect(isCommitPage('https://github.com/o/r/commits/main')).toBe(false);
+    expect(isCommitPage('https://github.com/o/r/commit/main')).toBe(false);
+  });
+});
+
+describe('isDiffPage', () => {
+  it('covers both kinds and nothing else', () => {
+    expect(isDiffPage('https://github.com/o/r/pull/5216/files')).toBe(true);
+    expect(isDiffPage('https://github.com/o/r/commit/abc1234')).toBe(true);
+    expect(isDiffPage('https://github.com/o/r/blob/main/README.md')).toBe(false);
+    expect(isDiffPage('https://github.com/o/r/issues/12')).toBe(false);
   });
 });
 

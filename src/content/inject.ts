@@ -8,12 +8,12 @@
  */
 
 import { BUILD_STAMP } from '@shared/config';
-import { parsePullRequestUrl } from '@shared/githubHost';
+import { parseCommitUrl, parsePullRequestUrl } from '@shared/githubHost';
 import { send } from '@shared/messages';
-import type { ChangedFile, PullRequestInfo } from '@shared/github';
+import type { ChangedFile, DiffTarget } from '@shared/github';
 import { DEFAULT_SETTINGS, loadSettings, onSettingsChanged, type Settings } from '@shared/settings';
 import { openOverlay, type OverlayHandle } from '@overlay/shell';
-import { describePage, findMarkdownFileBlocks, isPullRequestFilesPage } from './locate';
+import { describePage, findMarkdownFileBlocks, isDiffPage } from './locate';
 import { watchNavigation } from './nav';
 
 const BUTTON_CLASS = 'mdpd-open-button';
@@ -33,19 +33,40 @@ let settings: Settings = DEFAULT_SETTINGS;
 let lastFailure: string | null = null;
 let overlay: OverlayHandle | null = null;
 
-/** Cached per pull request so repeated opens do not re-query the API. */
-let cache: { key: string; pr: PullRequestInfo; files: ChangedFile[] } | null = null;
+/** Cached per diff so repeated opens do not re-query the API. */
+let cache: { key: string; target: DiffTarget; files: ChangedFile[] } | null = null;
 
-async function pullRequestContext(): Promise<{ pr: PullRequestInfo; files: ChangedFile[] }> {
-  const locator = parsePullRequestUrl(location.href);
-  if (!locator) throw new Error('This page is not a pull request.');
+/** What this page is a diff of, as a cache key — null when it is not one. */
+function contextKey(url: string = location.href): string | null {
+  const pr = parsePullRequestUrl(url);
+  if (pr) return `${pr.host}/${pr.owner}/${pr.repo}/pull/${pr.number}`;
 
-  const key = `${locator.host}/${locator.owner}/${locator.repo}/${locator.number}`;
+  const commit = parseCommitUrl(url);
+  if (commit) return `${commit.host}/${commit.owner}/${commit.repo}/commit/${commit.sha}`;
+
+  return null;
+}
+
+async function diffContext(): Promise<{ target: DiffTarget; files: ChangedFile[] }> {
+  const key = contextKey();
+  if (!key) throw new Error('This page is neither a pull request nor a commit.');
   if (cache?.key === key) return cache;
 
-  const pr = await send({ type: 'pr:info', locator });
-  const files = await send({ type: 'pr:files', locator });
-  cache = { key, pr, files };
+  const pr = parsePullRequestUrl(location.href);
+  const [target, files] = pr
+    ? await Promise.all([
+        send({ type: 'pr:info', locator: pr }),
+        send({ type: 'pr:files', locator: pr }),
+      ])
+    : await (async () => {
+        // One commit request serves both, so these cannot usefully race: the
+        // second call is answered from the first one's cache.
+        const commit = parseCommitUrl(location.href)!;
+        const info = await send({ type: 'commit:info', locator: commit });
+        return [info, await send({ type: 'commit:files', locator: commit })] as const;
+      })();
+
+  cache = { key, target, files };
   return cache;
 }
 
@@ -80,18 +101,18 @@ function setBusy(button: HTMLButtonElement, busy: boolean, label = 'Visualize di
 async function openFor(path: string, button: HTMLButtonElement): Promise<void> {
   setBusy(button, true);
   try {
-    const { pr, files } = await pullRequestContext();
+    const { target, files } = await diffContext();
 
     const file =
       files.find((candidate) => candidate.path === path) ??
       files.find((candidate) => candidate.previousPath === path);
 
     if (!file) {
-      throw new Error(`${path} is not part of this pull request's changed files.`);
+      throw new Error(`${path} is not among the files this diff changes.`);
     }
 
     const current = settings;
-    const payload = await send({ type: 'pr:file-diff', pullRequest: pr, file });
+    const payload = await send({ type: 'pr:file-diff', target, file });
 
     const sizeKb = (payload.baseText.length + payload.headText.length) / 1024;
     if (sizeKb <= current.maxFileSizeKb || confirmLarge(path, sizeKb, current.maxFileSizeKb)) {
@@ -112,7 +133,7 @@ function confirmLarge(path: string, sizeKb: number, limitKb: number): boolean {
 }
 
 function enhance(): void {
-  if (!isPullRequestFilesPage()) return;
+  if (!isDiffPage()) return;
   if (!settings.showButton) {
     for (const stale of document.querySelectorAll(`.${BUTTON_CLASS}`)) stale.remove();
     return;
@@ -200,12 +221,8 @@ function main(): Instance {
   });
 
   const watcher = watchNavigation(() => {
-    // A different pull request invalidates the cached file list.
-    const locator = parsePullRequestUrl(location.href);
-    const key = locator
-      ? `${locator.host}/${locator.owner}/${locator.repo}/${locator.number}`
-      : null;
-    if (cache && cache.key !== key) cache = null;
+    // A different pull request or commit invalidates the cached file list.
+    if (cache && cache.key !== contextKey()) cache = null;
     enhance();
   });
 

@@ -8,13 +8,21 @@
 
 import { OAUTH_SCOPES } from '@shared/config';
 import type { GitHubHost } from '@shared/githubHost';
-import { assetBase, hostFor, linkBase, pullRequestDiffUrl, rawUrl } from '@shared/githubHost';
+import {
+  assetBase,
+  commitDiffUrl,
+  hostFor,
+  linkBase,
+  pullRequestDiffUrl,
+  rawUrl,
+} from '@shared/githubHost';
 import type {
   ChangedFile,
   FileDiffPayload,
   FileStatus,
   NewCommentInput,
-  PullRequestInfo,
+  DiffTarget,
+  DiffTargetKind,
   ReviewThread,
   ViewerInfo,
 } from '@shared/github';
@@ -26,6 +34,7 @@ import {
   reconstructBase,
   type CommentableLines,
 } from '@core/diffParser';
+import { anchorFor, buildPositionMap, positionFor, type PositionMap } from '@core/diffPosition';
 import { getToken } from './tokenStore';
 
 export type ApiErrorKind =
@@ -202,10 +211,11 @@ export async function getPullRequest(
   owner: string,
   repo: string,
   number: number,
-): Promise<PullRequestInfo> {
+): Promise<DiffTarget> {
   const gh = hostFor(host);
   const pr = await restJson<RestPullRequest>(gh, `/repos/${owner}/${repo}/pulls/${number}`);
   return {
+    kind: 'pull',
     host,
     owner,
     repo,
@@ -238,8 +248,31 @@ interface RestFile {
  */
 const patchCacheByFile = new Map<string, Map<string, string>>();
 
-function prKey(host: string, owner: string, repo: string, number: number): string {
-  return `${host}/${owner}/${repo}/${number}`;
+/**
+ * Identity of what is being diffed.
+ *
+ * A pull request is keyed by its number and a commit by its sha, and the kind
+ * is in the key so the two can never collide on a repository whose pull
+ * request number happens to look like anything else.
+ */
+function cacheKey(
+  host: string,
+  owner: string,
+  repo: string,
+  kind: DiffTargetKind,
+  id: string | number | null,
+): string {
+  return `${host}/${owner}/${repo}/${kind}/${String(id)}`;
+}
+
+function targetKey(target: DiffTarget): string {
+  return cacheKey(
+    target.host,
+    target.owner,
+    target.repo,
+    target.kind,
+    target.kind === 'pull' ? target.number : target.headSha,
+  );
 }
 
 export async function listPullRequestFiles(
@@ -272,8 +305,91 @@ export async function listPullRequestFiles(
     if (batch.length < 100) break;
   }
 
-  patchCacheByFile.set(prKey(host, owner, repo, number), patches);
+  patchCacheByFile.set(cacheKey(host, owner, repo, 'pull', number), patches);
   return files;
+}
+
+// ------------------------------------------------------------------ commit
+
+interface RestCommit {
+  sha: string;
+  commit: { message: string };
+  parents: { sha: string }[];
+  files?: RestFile[];
+}
+
+/**
+ * One request serves both the target and its file list.
+ *
+ * Unlike a pull request, a commit comes back whole: metadata, parents and
+ * every file with its patch in a single response. Caching it here means the
+ * content script's two questions cost one round trip rather than two.
+ */
+const commitCache = new Map<string, RestCommit>();
+
+async function fetchCommit(
+  host: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<RestCommit> {
+  const key = cacheKey(host, owner, repo, 'commit', sha);
+  const cached = commitCache.get(key);
+  if (cached) return cached;
+
+  const gh = hostFor(host);
+  const commit = await restJson<RestCommit>(gh, `/repos/${owner}/${repo}/commits/${sha}`);
+  commitCache.set(key, commit);
+
+  const patches = new Map<string, string>();
+  for (const file of commit.files ?? []) {
+    if (file.patch) patches.set(file.filename, file.patch);
+  }
+  patchCacheByFile.set(cacheKey(host, owner, repo, 'commit', commit.sha), patches);
+
+  return commit;
+}
+
+export async function getCommit(
+  host: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<DiffTarget> {
+  const commit = await fetchCommit(host, owner, repo, sha);
+
+  return {
+    kind: 'commit',
+    host,
+    owner,
+    repo,
+    number: null,
+    // The subject line, which is what GitHub puts at the top of the page.
+    title: commit.commit.message.split('\n')[0] ?? commit.sha.slice(0, 7),
+    // A root commit has no parent: an empty base makes every file read as
+    // added, which is exactly what it is.
+    baseSha: commit.parents[0]?.sha ?? '',
+    headSha: commit.sha,
+    headOwner: owner,
+    headRepo: repo,
+  };
+}
+
+export async function listCommitFiles(
+  host: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<ChangedFile[]> {
+  const commit = await fetchCommit(host, owner, repo, sha);
+
+  return (commit.files ?? []).map((file) => ({
+    path: file.filename,
+    previousPath: file.previous_filename ?? null,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+  }));
 }
 
 // ----------------------------------------------------------- file contents
@@ -340,18 +456,20 @@ async function fetchContent(
 const patchCache = new Map<string, string | null>();
 
 /** The pull request's unified patch, readable with the browser session alone. */
-async function pullRequestPatch(pullRequest: PullRequestInfo): Promise<string | null> {
-  const gh = hostFor(pullRequest.host);
-  const key = `${pullRequest.host}/${pullRequest.owner}/${pullRequest.repo}/${pullRequest.number}`;
+async function targetPatch(target: DiffTarget): Promise<string | null> {
+  const gh = hostFor(target.host);
+  const key = targetKey(target);
   const cached = patchCache.get(key);
   if (cached !== undefined) return cached;
 
+  const url =
+    target.kind === 'pull'
+      ? pullRequestDiffUrl(gh, target.owner, target.repo, target.number!)
+      : commitDiffUrl(gh, target.owner, target.repo, target.headSha);
+
   let text: string | null = null;
   try {
-    const response = await fetch(
-      pullRequestDiffUrl(gh, pullRequest.owner, pullRequest.repo, pullRequest.number),
-      { credentials: 'include' },
-    );
+    const response = await fetch(url, { credentials: 'include' });
     if (response.ok) text = await response.text();
   } catch {
     text = null;
@@ -367,11 +485,11 @@ async function pullRequestPatch(pullRequest: PullRequestInfo): Promise<string | 
  * base branch, say — but the patch and the head blob are both available.
  */
 async function reconstructBaseText(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   file: ChangedFile,
   headText: string,
 ): Promise<string | null> {
-  const patch = await pullRequestPatch(pullRequest);
+  const patch = await targetPatch(target);
   if (!patch) return null;
 
   const diffs = parseUnifiedDiff(patch);
@@ -392,10 +510,10 @@ async function reconstructBaseText(
  * so rather than letting GitHub reject the attempt.
  */
 async function resolveCommentableLines(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   file: ChangedFile,
 ): Promise<CommentableLines> {
-  const key = prKey(pullRequest.host, pullRequest.owner, pullRequest.repo, pullRequest.number);
+  const key = targetKey(target);
   const perFile = patchCacheByFile.get(key)?.get(file.path);
 
   if (perFile) {
@@ -407,7 +525,7 @@ async function resolveCommentableLines(
     if (found) return commentableLines(found.hunks);
   }
 
-  const whole = await pullRequestPatch(pullRequest);
+  const whole = await targetPatch(target);
   if (!whole) return { left: [], right: [] };
 
   const diffs = parseUnifiedDiff(whole);
@@ -433,62 +551,35 @@ async function tryGetFileContent(
 }
 
 /** Everything the overlay needs to render one file. */
-export async function getFileDiff(
-  pullRequest: PullRequestInfo,
-  file: ChangedFile,
-): Promise<FileDiffPayload> {
-  const gh = hostFor(pullRequest.host);
+export async function getFileDiff(target: DiffTarget, file: ChangedFile): Promise<FileDiffPayload> {
+  const gh = hostFor(target.host);
   const basePath = file.previousPath ?? file.path;
 
   const [baseBlob, headText] = await Promise.all([
     file.status === 'added'
       ? Promise.resolve(null)
-      : tryGetFileContent(
-          pullRequest.host,
-          pullRequest.owner,
-          pullRequest.repo,
-          pullRequest.baseSha,
-          basePath,
-        ),
+      : tryGetFileContent(target.host, target.owner, target.repo, target.baseSha, basePath),
     file.status === 'removed'
       ? Promise.resolve(null)
-      : getFileContent(
-          pullRequest.host,
-          pullRequest.headOwner,
-          pullRequest.headRepo,
-          pullRequest.headSha,
-          file.path,
-        ),
+      : getFileContent(target.host, target.headOwner, target.headRepo, target.headSha, file.path),
   ]);
 
   let baseText = baseBlob;
   if (baseText === null && file.status !== 'added' && headText !== null) {
-    baseText = await reconstructBaseText(pullRequest, file, headText);
+    baseText = await reconstructBaseText(target, file, headText);
   }
 
   return {
-    pullRequest,
+    target,
     file,
-    commentableLines: await resolveCommentableLines(pullRequest, file),
+    commentableLines: await resolveCommentableLines(target, file),
     baseText: baseText ?? '',
     headText: headText ?? '',
-    baseAssetUrl: assetBase(gh, pullRequest.owner, pullRequest.repo, pullRequest.baseSha, basePath),
-    headAssetUrl: assetBase(
-      gh,
-      pullRequest.headOwner,
-      pullRequest.headRepo,
-      pullRequest.headSha,
-      file.path,
-    ),
-    baseLinkUrl: linkBase(gh, pullRequest.owner, pullRequest.repo, pullRequest.baseSha, basePath),
-    headLinkUrl: linkBase(
-      gh,
-      pullRequest.headOwner,
-      pullRequest.headRepo,
-      pullRequest.headSha,
-      file.path,
-    ),
-    authenticated: (await getToken(pullRequest.host)) !== null,
+    baseAssetUrl: assetBase(gh, target.owner, target.repo, target.baseSha, basePath),
+    headAssetUrl: assetBase(gh, target.headOwner, target.headRepo, target.headSha, file.path),
+    baseLinkUrl: linkBase(gh, target.owner, target.repo, target.baseSha, basePath),
+    headLinkUrl: linkBase(gh, target.headOwner, target.headRepo, target.headSha, file.path),
+    authenticated: (await getToken(target.host)) !== null,
   };
 }
 
@@ -593,20 +684,33 @@ function toReviewThread(node: GqlThread): ReviewThread {
   };
 }
 
+/**
+ * Comments on one file, whatever is being diffed.
+ *
+ * A pull request has review threads; a commit has a flat list of comments
+ * addressed by diff position. The overlay knows only about threads, so a
+ * commit comment becomes a thread of one — which is exactly what it is.
+ */
+export async function listComments(target: DiffTarget, path?: string): Promise<ReviewThread[]> {
+  return target.kind === 'commit'
+    ? listCommitComments(target, path)
+    : listReviewThreads(target, path);
+}
+
 /** Threads for one file. GraphQL is the only source that reports resolved state. */
 export async function listReviewThreads(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   path?: string,
 ): Promise<ReviewThread[]> {
-  const gh = hostFor(pullRequest.host);
+  const gh = hostFor(target.host);
   const threads: ReviewThread[] = [];
   let cursor: string | null = null;
 
   for (let page = 0; page < 20; page++) {
     const data: GqlThreadsResponse = await graphql<GqlThreadsResponse>(gh, THREADS_QUERY, {
-      owner: pullRequest.owner,
-      repo: pullRequest.repo,
-      number: pullRequest.number,
+      owner: target.owner,
+      repo: target.repo,
+      number: target.number,
       cursor,
     });
 
@@ -625,6 +729,131 @@ export async function listReviewThreads(
   return threads;
 }
 
+// ---------------------------------------------------------- commit comments
+
+interface RestCommitComment {
+  id: number;
+  node_id: string;
+  path: string | null;
+  position: number | null;
+  body: string;
+  created_at: string;
+  html_url: string;
+  user: { login: string; avatar_url: string; html_url: string } | null;
+}
+
+/**
+ * The position map for one file of a commit, built from the patch the commit
+ * request already returned. Null when the file has no patch — GitHub omits it
+ * for binaries and for anything it considers too large — and then a comment on
+ * that file cannot be placed, only listed as outdated.
+ */
+async function positionMapFor(target: DiffTarget, path: string): Promise<PositionMap | null> {
+  await fetchCommit(target.host, target.owner, target.repo, target.headSha);
+  const patch = patchCacheByFile.get(targetKey(target))?.get(path);
+  return patch ? buildPositionMap(patch) : null;
+}
+
+async function listCommitComments(target: DiffTarget, path?: string): Promise<ReviewThread[]> {
+  const gh = hostFor(target.host);
+  const comments: RestCommitComment[] = [];
+
+  for (let page = 1; page <= 10; page++) {
+    const batch = await restJson<RestCommitComment[]>(
+      gh,
+      `/repos/${target.owner}/${target.repo}/commits/${target.headSha}/comments?per_page=100&page=${page}`,
+    );
+    comments.push(...batch);
+    if (batch.length < 100) break;
+  }
+
+  const viewer = await currentLogin(target.host);
+  const maps = new Map<string, PositionMap | null>();
+  const threads: ReviewThread[] = [];
+
+  for (const comment of comments) {
+    // A comment with no path is on the commit as a whole, not on a file.
+    if (!comment.path) continue;
+    if (path !== undefined && comment.path !== path) continue;
+
+    if (!maps.has(comment.path)) {
+      maps.set(comment.path, await positionMapFor(target, comment.path));
+    }
+    const map = maps.get(comment.path) ?? null;
+    const anchor = map && comment.position !== null ? anchorFor(map, comment.position) : null;
+
+    threads.push({
+      id: comment.node_id,
+      path: comment.path,
+      // No anchor means the position no longer resolves — the same situation a
+      // stale review thread is in, and it is shown the same way.
+      line: anchor?.line ?? null,
+      startLine: null,
+      originalLine: anchor?.line ?? null,
+      side: anchor?.side ?? 'RIGHT',
+      startSide: null,
+      isResolved: false,
+      isOutdated: anchor === null,
+      // Commit comments have no resolve state and no replies: GitHub offers
+      // neither, so neither is offered here.
+      viewerCanResolve: false,
+      viewerCanUnresolve: false,
+      diffHunk: '',
+      comments: [
+        {
+          id: comment.node_id,
+          databaseId: comment.id,
+          author: comment.user
+            ? {
+                login: comment.user.login,
+                avatarUrl: comment.user.avatar_url,
+                url: comment.user.html_url,
+              }
+            : null,
+          bodyMarkdown: comment.body,
+          createdAt: comment.created_at,
+          url: comment.html_url,
+          viewerDidAuthor: viewer !== null && comment.user?.login === viewer,
+        },
+      ],
+    });
+  }
+
+  return threads;
+}
+
+/**
+ * Who the token belongs to, so a commit comment can say whether the reader
+ * wrote it. The REST payload has no equivalent of GraphQL's viewerDidAuthor.
+ */
+async function currentLogin(host: string): Promise<string | null> {
+  try {
+    return (await getViewer(host)).login;
+  } catch {
+    return null;
+  }
+}
+
+async function createCommitComment(target: DiffTarget, input: NewCommentInput): Promise<void> {
+  const gh = hostFor(target.host);
+  const map = await positionMapFor(target, input.path);
+  const position = map ? positionFor(map, input.side, input.line) : null;
+
+  if (position === null) {
+    throw new ApiError(
+      'invalid',
+      'That line is not part of this commit’s diff, and a commit comment can only be attached to one.',
+      422,
+    );
+  }
+
+  await restJson<RestCommitComment>(
+    gh,
+    `/repos/${target.owner}/${target.repo}/commits/${target.headSha}/comments`,
+    { method: 'POST', body: { body: input.body, path: input.path, position } },
+  );
+}
+
 // ------------------------------------------------------------ comment writes
 
 interface RestComment {
@@ -638,13 +867,15 @@ interface RestComment {
 
 /** Posts a standalone review comment, the same as GitHub's "Add single comment". */
 export async function createReviewComment(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   input: NewCommentInput,
 ): Promise<void> {
-  const gh = hostFor(pullRequest.host);
+  if (target.kind === 'commit') return createCommitComment(target, input);
+
+  const gh = hostFor(target.host);
   const body: Record<string, unknown> = {
     body: input.body,
-    commit_id: pullRequest.headSha,
+    commit_id: target.headSha,
     path: input.path,
     side: input.side,
     line: input.line,
@@ -656,58 +887,70 @@ export async function createReviewComment(
 
   await restJson<RestComment>(
     gh,
-    `/repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/comments`,
+    `/repos/${target.owner}/${target.repo}/pulls/${target.number}/comments`,
     { method: 'POST', body },
   );
 }
 
 export async function replyToComment(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   inReplyToDatabaseId: number,
   body: string,
 ): Promise<void> {
-  const gh = hostFor(pullRequest.host);
+  if (target.kind === 'commit') {
+    throw new ApiError(
+      'invalid',
+      'GitHub has no replies on commit comments — they are a flat list. Comment on the same line instead.',
+      400,
+    );
+  }
+
+  const gh = hostFor(target.host);
   await restJson<RestComment>(
     gh,
-    `/repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/comments/${inReplyToDatabaseId}/replies`,
+    `/repos/${target.owner}/${target.repo}/pulls/${target.number}/comments/${inReplyToDatabaseId}/replies`,
     { method: 'POST', body: { body } },
   );
 }
 
+/**
+ * Where a single comment lives, which is not the same path for the two kinds:
+ * a review comment hangs off the pull request, a commit comment off the
+ * repository.
+ */
+function commentPath(target: DiffTarget, databaseId: number): string {
+  return target.kind === 'commit'
+    ? `/repos/${target.owner}/${target.repo}/comments/${databaseId}`
+    : `/repos/${target.owner}/${target.repo}/pulls/comments/${databaseId}`;
+}
+
 export async function updateComment(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   databaseId: number,
   body: string,
 ): Promise<void> {
-  const gh = hostFor(pullRequest.host);
-  await restJson<RestComment>(
-    gh,
-    `/repos/${pullRequest.owner}/${pullRequest.repo}/pulls/comments/${databaseId}`,
-    { method: 'PATCH', body: { body } },
-  );
-}
-
-export async function deleteComment(
-  pullRequest: PullRequestInfo,
-  databaseId: number,
-): Promise<void> {
-  const gh = hostFor(pullRequest.host);
-  await rest(gh, `/repos/${pullRequest.owner}/${pullRequest.repo}/pulls/comments/${databaseId}`, {
-    method: 'DELETE',
+  const gh = hostFor(target.host);
+  await restJson<RestComment>(gh, commentPath(target, databaseId), {
+    method: 'PATCH',
+    body: { body },
   });
 }
 
+export async function deleteComment(target: DiffTarget, databaseId: number): Promise<void> {
+  const gh = hostFor(target.host);
+  await rest(gh, commentPath(target, databaseId), { method: 'DELETE' });
+}
+
 export async function addReaction(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   databaseId: number,
   content: string,
 ): Promise<void> {
-  const gh = hostFor(pullRequest.host);
-  await restJson(
-    gh,
-    `/repos/${pullRequest.owner}/${pullRequest.repo}/pulls/comments/${databaseId}/reactions`,
-    { method: 'POST', body: { content } },
-  );
+  const gh = hostFor(target.host);
+  await restJson(gh, `${commentPath(target, databaseId)}/reactions`, {
+    method: 'POST',
+    body: { content },
+  });
 }
 
 const RESOLVE_MUTATION = `
@@ -721,10 +964,10 @@ mutation Unresolve($threadId: ID!) {
 }`;
 
 export async function setThreadResolved(
-  pullRequest: PullRequestInfo,
+  target: DiffTarget,
   threadId: string,
   resolved: boolean,
 ): Promise<void> {
-  const gh = hostFor(pullRequest.host);
+  const gh = hostFor(target.host);
   await graphql(gh, resolved ? RESOLVE_MUTATION : UNRESOLVE_MUTATION, { threadId });
 }

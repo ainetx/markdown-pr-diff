@@ -9,6 +9,7 @@
 import overlayCss from './styles.css?inline';
 import { DOC_CLASS, renderDiff, type RenderedDiff } from '@core/renderDiff';
 import type { FileDiffPayload, ReviewComment, ReviewThread } from '@shared/github';
+import { refOf, sideLabels } from '@shared/github';
 import { BUILD_STAMP } from '@shared/config';
 import { send } from '@shared/messages';
 import type { Layout, Settings } from '@shared/settings';
@@ -56,6 +57,8 @@ function button(doc: Document, label: string, title: string): HTMLButtonElement 
 export function openOverlay(options: OverlayOptions): OverlayHandle {
   const { payload } = options;
   const doc = document;
+  const labels = sideLabels(payload.target);
+  const isCommit = payload.target.kind === 'commit';
 
   const host = doc.createElement('div');
   host.className = 'mdpd-host';
@@ -195,7 +198,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     try {
       threads = await send({
         type: 'threads:list',
-        pullRequest: payload.pullRequest,
+        target: payload.target,
         path: payload.file.path,
       });
       threadLayer?.render(threads);
@@ -209,25 +212,26 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   const actions: ThreadActions = {
     canWrite: payload.authenticated,
     readOnlyReason: 'Connect a GitHub account in the extension settings to reply from here.',
+    canReply: !isCommit,
     async reply(thread: ReviewThread, body: string) {
       const last = thread.comments[thread.comments.length - 1];
       if (!last) throw new Error('This thread has no comment to reply to.');
       await send({
         type: 'comment:reply',
-        pullRequest: payload.pullRequest,
+        target: payload.target,
         replyTo: last.databaseId,
         body,
       });
       await refreshThreads();
     },
     async create(input) {
-      await send({ type: 'comment:create', pullRequest: payload.pullRequest, input });
+      await send({ type: 'comment:create', target: payload.target, input });
       await refreshThreads();
     },
     async setResolved(thread, resolved) {
       await send({
         type: 'thread:resolve',
-        pullRequest: payload.pullRequest,
+        target: payload.target,
         threadId: thread.id,
         resolved,
       });
@@ -236,7 +240,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     async update(comment: ReviewComment, body: string) {
       await send({
         type: 'comment:update',
-        pullRequest: payload.pullRequest,
+        target: payload.target,
         databaseId: comment.databaseId,
         body,
       });
@@ -245,7 +249,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     async remove(comment: ReviewComment) {
       await send({
         type: 'comment:delete',
-        pullRequest: payload.pullRequest,
+        target: payload.target,
         databaseId: comment.databaseId,
       });
       await refreshThreads();
@@ -261,10 +265,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
       return createDocumentView({
         content: side === 'old' ? result.oldPane : result.newPane,
         side,
-        label:
-          side === 'old'
-            ? `Base · ${payload.pullRequest.baseSha.slice(0, 7)}`
-            : `Head · ${payload.pullRequest.headSha.slice(0, 7)}`,
+        label: side === 'old' ? labels.base : labels.head,
       });
     }
 
@@ -281,8 +282,8 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
     return createSideBySide({
       oldDoc: result.oldPane,
       newDoc: result.newPane,
-      oldLabel: `Base · ${payload.pullRequest.baseSha.slice(0, 7)}`,
-      newLabel: `Head · ${payload.pullRequest.headSha.slice(0, 7)}`,
+      oldLabel: labels.base,
+      newLabel: labels.head,
       regions: result.diff.regions,
       oldLineCount: result.diff.oldLineCount,
     });
@@ -331,10 +332,10 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
       anchors: rendered.anchors,
       outdatedHost,
       draftBase: {
-        host: payload.pullRequest.host,
-        owner: payload.pullRequest.owner,
-        repo: payload.pullRequest.repo,
-        number: payload.pullRequest.number,
+        host: payload.target.host,
+        owner: payload.target.owner,
+        repo: payload.target.repo,
+        ref: refOf(payload.target),
         path: payload.file.path,
       },
       commentable: payload.commentableLines,
@@ -365,7 +366,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   nextBtn.addEventListener('click', () => view?.goToChange(1));
 
   openBtn.addEventListener('click', () => {
-    const { host: ghHost, headOwner, headRepo, headSha } = payload.pullRequest;
+    const { host: ghHost, headOwner, headRepo, headSha } = payload.target;
     window.open(
       `https://${ghHost}/${headOwner}/${headRepo}/blob/${headSha}/${payload.file.path}`,
       '_blank',
@@ -413,7 +414,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   /** Names the account in the toolbar, and says plainly when it cannot write. */
   async function describeAccount(): Promise<void> {
     try {
-      const status = await send({ type: 'auth:status', host: payload.pullRequest.host });
+      const status = await send({ type: 'auth:status', host: payload.target.host });
       if (!status.connected) {
         authChip.textContent = 'read-only';
         return;

@@ -89,6 +89,7 @@ function thread(overrides: Partial<ReviewThread>): ReviewThread {
 
 const actions: ThreadActions = {
   canWrite: true,
+  canReply: true,
   readOnlyReason: '',
   reply: async () => undefined,
   create: async () => undefined,
@@ -111,7 +112,7 @@ function setup(commentable = { left: allLines(), right: allLines() }) {
     view,
     anchors: rendered.anchors,
     outdatedHost,
-    draftBase: { host: 'github.com', owner: 'o', repo: 'r', number: 1, path: 'guide.md' },
+    draftBase: { host: 'github.com', owner: 'o', repo: 'r', ref: 'pull/1', path: 'guide.md' },
     commentable,
     actions,
   });
@@ -226,7 +227,7 @@ describe('thread placement', () => {
       view,
       anchors: rendered.anchors,
       outdatedHost,
-      draftBase: { host: 'github.com', owner: 'o', repo: 'r', number: 1, path: 'guide.md' },
+      draftBase: { host: 'github.com', owner: 'o', repo: 'r', ref: 'pull/1', path: 'guide.md' },
       commentable: { left: allLines(), right: allLines() },
       actions: { ...actions, canWrite: false, readOnlyReason: 'Connect an account.' },
     });
@@ -298,7 +299,7 @@ describe('the add-comment affordance', () => {
       view,
       anchors: rendered.anchors,
       outdatedHost: document.createElement('div'),
-      draftBase: { host: 'github.com', owner: 'o', repo: 'r', number: 1, path: 'guide.md' },
+      draftBase: { host: 'github.com', owner: 'o', repo: 'r', ref: 'pull/1', path: 'guide.md' },
       commentable: { left: allLines(), right: allLines() },
       actions: { ...actions, canWrite: false },
     });
@@ -372,7 +373,7 @@ describe('where a comment may be anchored', () => {
       view,
       anchors: rendered.anchors,
       outdatedHost: document.createElement('div'),
-      draftBase: { host: 'github.com', owner: 'o', repo: 'r', number: 1, path: 'guide.md' },
+      draftBase: { host: 'github.com', owner: 'o', repo: 'r', ref: 'pull/1', path: 'guide.md' },
       // Only line 8 of the head side is inside a hunk.
       commentable: { left: [], right: [8] },
       actions: {
