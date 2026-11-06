@@ -1,6 +1,6 @@
 {
   "name": "markdown-pr-diff",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Chrome extension: rendered side-by-side markdown diff for GitHub pull requests",
   "license": "MIT",
