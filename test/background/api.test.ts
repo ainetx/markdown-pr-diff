@@ -50,8 +50,12 @@ const PR: DiffTarget = {
   title: 'Docs',
   baseSha: 'base123',
   headSha: 'head456',
+  baseOwner: 'own',
+  baseRepo: 'repo',
   headOwner: 'fork',
   headRepo: 'repo',
+  range: false,
+  commentingDisabledReason: null,
 };
 
 const FILE: ChangedFile = {
@@ -507,5 +511,169 @@ describe('commits as a diff target', () => {
     const threads = await module.listComments(target, 'docs/DESIGN.md');
 
     expect(threads[0]).toMatchObject({ line: null, isOutdated: true });
+  });
+});
+
+// -------------------------------------------------- pull request, narrowed
+
+const RANGE_BASE = 'a0adcdeb3a025a9aa58c97aefb7336c5568c6540';
+const RANGE_HEAD = 'd515f90f57432af61fc5051a1a607e9adbc6d465';
+
+const PR_BODY = JSON.stringify({
+  title: 'Tooling vision',
+  base: { sha: 'prbase', repo: { name: 'repo', owner: { login: 'own' } } },
+  head: { sha: RANGE_HEAD, repo: { name: 'repo', owner: { login: 'fork' } } },
+});
+
+const COMPARE_BODY = JSON.stringify({
+  merge_base_commit: { sha: RANGE_BASE },
+  files: [
+    {
+      filename: 'docs/VISION.md',
+      status: 'modified',
+      additions: 215,
+      deletions: 91,
+      patch: ['@@ -1,2 +1,2 @@', ' intro', '-was', '+is'].join('\n'),
+    },
+  ],
+});
+
+/** Routes by URL so a range test can answer both requests it makes. */
+function respondToRange(overrides: (call: Call) => string | null = () => null) {
+  respond((call) => {
+    const custom = overrides(call);
+    if (custom !== null) return { body: custom };
+    if (call.url.includes('/compare/')) return { body: COMPARE_BODY };
+    if (call.url.includes('/pulls/5729/files')) return { body: '[]' };
+    if (call.url.includes('/pulls/5729')) return { body: PR_BODY };
+    return { body: 'file body' };
+  });
+}
+
+describe('a pull request narrowed to a commit range', () => {
+  it('diffs the range, not the whole pull request', async () => {
+    respondToRange();
+    const { getPullRequestRange } = await api();
+
+    const target = await getPullRequestRange(
+      'github.com',
+      'own',
+      'repo',
+      5729,
+      RANGE_BASE,
+      RANGE_HEAD,
+    );
+
+    expect(target).toMatchObject({
+      kind: 'pull',
+      number: 5729,
+      range: true,
+      baseSha: RANGE_BASE,
+      headSha: RANGE_HEAD,
+    });
+    // The whole pull request's base must not leak into a range view: that is
+    // exactly the bug this exists to fix, where a file added earlier in the
+    // branch showed up as wholly new instead of lightly edited.
+    expect(target.baseSha).not.toBe('prbase');
+    expect(calls.some((call) => call.url.includes(`/compare/${RANGE_BASE}...${RANGE_HEAD}`))).toBe(
+      true,
+    );
+  });
+
+  it('takes both sides from the branch, which may be a fork', async () => {
+    respondToRange();
+    const { getPullRequestRange } = await api();
+
+    const target = await getPullRequestRange(
+      'github.com',
+      'own',
+      'repo',
+      5729,
+      RANGE_BASE,
+      RANGE_HEAD,
+    );
+
+    expect(target).toMatchObject({ baseOwner: 'fork', headOwner: 'fork' });
+  });
+
+  it('lists only the files the range touches', async () => {
+    respondToRange();
+    const module = await api();
+
+    await module.getPullRequestRange('github.com', 'own', 'repo', 5729, RANGE_BASE, RANGE_HEAD);
+    const files = await module.listPullRequestRangeFiles(
+      'github.com',
+      'own',
+      'repo',
+      RANGE_BASE,
+      RANGE_HEAD,
+    );
+
+    expect(files).toEqual([
+      {
+        path: 'docs/VISION.md',
+        previousPath: null,
+        status: 'modified',
+        additions: 215,
+        deletions: 91,
+      },
+    ]);
+  });
+
+  it('offers no comment anchors on the left, where line numbers mean something else', async () => {
+    respond((call) => {
+      if (call.url.includes('/compare/')) return { body: COMPARE_BODY };
+      if (call.url.includes('/pulls/5729/files')) {
+        return {
+          body: JSON.stringify([
+            {
+              filename: 'docs/VISION.md',
+              status: 'modified',
+              additions: 1,
+              deletions: 1,
+              patch: ['@@ -1,2 +1,2 @@', ' intro', '-was', '+is'].join('\n'),
+            },
+          ]),
+        };
+      }
+      if (call.url.includes('/pulls/5729')) return { body: PR_BODY };
+      return { body: 'file body' };
+    });
+    const module = await api();
+    const target = await module.getPullRequestRange(
+      'github.com',
+      'own',
+      'repo',
+      5729,
+      RANGE_BASE,
+      RANGE_HEAD,
+    );
+
+    const payload = await module.getFileDiff(target, {
+      path: 'docs/VISION.md',
+      previousPath: null,
+      status: 'modified',
+      additions: 215,
+      deletions: 91,
+    });
+
+    expect(payload.commentableLines.left).toEqual([]);
+    expect(payload.commentableLines.right.length).toBeGreaterThan(0);
+  });
+
+  it('refuses commenting when the range stops before the latest commit', async () => {
+    respondToRange();
+    const { getPullRequestRange } = await api();
+
+    const target = await getPullRequestRange(
+      'github.com',
+      'own',
+      'repo',
+      5729,
+      RANGE_BASE,
+      'abc1234',
+    );
+
+    expect(target.commentingDisabledReason).toMatch(/stops before the latest commit/);
   });
 });

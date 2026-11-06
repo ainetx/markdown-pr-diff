@@ -8,7 +8,7 @@
  */
 
 import { BUILD_STAMP } from '@shared/config';
-import { parseCommitUrl, parsePullRequestUrl } from '@shared/githubHost';
+import { parseCommitUrl, parsePullRequestRange, parsePullRequestUrl } from '@shared/githubHost';
 import { send } from '@shared/messages';
 import type { ChangedFile, DiffTarget } from '@shared/github';
 import { DEFAULT_SETTINGS, loadSettings, onSettingsChanged, type Settings } from '@shared/settings';
@@ -36,8 +36,19 @@ let overlay: OverlayHandle | null = null;
 /** Cached per diff so repeated opens do not re-query the API. */
 let cache: { key: string; target: DiffTarget; files: ChangedFile[] } | null = null;
 
-/** What this page is a diff of, as a cache key — null when it is not one. */
+/**
+ * What this page is a diff of, as a cache key — null when it is not one.
+ *
+ * The range is tested first because its URL is also a pull request URL, and
+ * matching the looser pattern first would show the whole pull request where
+ * the page is showing a handful of commits.
+ */
 function contextKey(url: string = location.href): string | null {
+  const range = parsePullRequestRange(url);
+  if (range) {
+    return `${range.host}/${range.owner}/${range.repo}/pull/${range.number}/${range.base}..${range.head}`;
+  }
+
   const pr = parsePullRequestUrl(url);
   if (pr) return `${pr.host}/${pr.owner}/${pr.repo}/pull/${pr.number}`;
 
@@ -52,22 +63,31 @@ async function diffContext(): Promise<{ target: DiffTarget; files: ChangedFile[]
   if (!key) throw new Error('This page is neither a pull request nor a commit.');
   if (cache?.key === key) return cache;
 
-  const pr = parsePullRequestUrl(location.href);
-  const [target, files] = pr
-    ? await Promise.all([
-        send({ type: 'pr:info', locator: pr }),
-        send({ type: 'pr:files', locator: pr }),
-      ])
-    : await (async () => {
-        // One commit request serves both, so these cannot usefully race: the
-        // second call is answered from the first one's cache.
-        const commit = parseCommitUrl(location.href)!;
-        const info = await send({ type: 'commit:info', locator: commit });
-        return [info, await send({ type: 'commit:files', locator: commit })] as const;
-      })();
-
+  const [target, files] = await fetchContext();
   cache = { key, target, files };
   return cache;
+}
+
+async function fetchContext(): Promise<readonly [DiffTarget, ChangedFile[]]> {
+  const range = parsePullRequestRange(location.href);
+  if (range) {
+    // Both are served by one comparison request, so the second is answered
+    // from the first one's cache rather than racing it.
+    const info = await send({ type: 'pr:range-info', locator: range });
+    return [info, await send({ type: 'pr:range-files', locator: range })];
+  }
+
+  const pr = parsePullRequestUrl(location.href);
+  if (pr) {
+    return Promise.all([
+      send({ type: 'pr:info', locator: pr }),
+      send({ type: 'pr:files', locator: pr }),
+    ]);
+  }
+
+  const commit = parseCommitUrl(location.href)!;
+  const info = await send({ type: 'commit:info', locator: commit });
+  return [info, await send({ type: 'commit:files', locator: commit })];
 }
 
 function makeButton(path: string): HTMLButtonElement {

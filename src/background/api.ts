@@ -22,10 +22,10 @@ import type {
   FileStatus,
   NewCommentInput,
   DiffTarget,
-  DiffTargetKind,
   ReviewThread,
   ViewerInfo,
 } from '@shared/github';
+import { refOf } from '@shared/github';
 import type { DiffSide } from '@core/types';
 import {
   commentableLines,
@@ -223,10 +223,112 @@ export async function getPullRequest(
     title: pr.title,
     baseSha: pr.base.sha,
     headSha: pr.head.sha,
+    baseOwner: owner,
+    baseRepo: repo,
     // A deleted fork leaves head.repo null; the base repo still holds the commit.
     headOwner: pr.head.repo?.owner.login ?? owner,
     headRepo: pr.head.repo?.name ?? repo,
+    range: false,
+    commentingDisabledReason: null,
   };
+}
+
+// --------------------------------------------------- pull request, narrowed
+
+interface RestComparison {
+  merge_base_commit: { sha: string };
+  files?: RestFile[];
+}
+
+const comparisonCache = new Map<string, RestComparison>();
+
+async function fetchComparison(
+  host: string,
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+): Promise<RestComparison> {
+  const key = cacheKey(host, owner, repo, `compare/${base}...${head}`);
+  const cached = comparisonCache.get(key);
+  if (cached) return cached;
+
+  const gh = hostFor(host);
+  // Three dots: the diff from where the two commits diverged, which is what
+  // GitHub's own range view shows. Along a single branch — the ordinary case,
+  // "what changed since I last looked" — it is the same as a direct diff.
+  const comparison = await restJson<RestComparison>(
+    gh,
+    `/repos/${owner}/${repo}/compare/${base}...${head}`,
+  );
+  comparisonCache.set(key, comparison);
+  return comparison;
+}
+
+/**
+ * A pull request narrowed to a commit range.
+ *
+ * Both sides are commits on the pull request's branch, so both blobs come from
+ * the head repository rather than the base one. Comments stay review comments
+ * on the pull request, which is why the kind stays `pull`.
+ */
+export async function getPullRequestRange(
+  host: string,
+  owner: string,
+  repo: string,
+  number: number,
+  base: string,
+  head: string,
+): Promise<DiffTarget> {
+  const [pr, comparison] = await Promise.all([
+    getPullRequest(host, owner, repo, number),
+    fetchComparison(host, owner, repo, base, head),
+  ]);
+
+  const target: DiffTarget = {
+    ...pr,
+    baseSha: comparison.merge_base_commit.sha,
+    headSha: head,
+    // Both ends are commits of the branch, wherever that branch lives.
+    baseOwner: pr.headOwner,
+    baseRepo: pr.headRepo,
+    range: true,
+    // A review comment is addressed by a line of the pull request's diff. When
+    // the range ends where the pull request does, the right-hand side is that
+    // same file and the lines carry over. When it ends earlier they refer to an
+    // intermediate commit and mean something else, so rather than posting
+    // comments that land on the wrong lines this view only reads.
+    commentingDisabledReason:
+      head === pr.headSha
+        ? null
+        : 'This range stops before the latest commit, so a comment here would not line up with the pull request’s diff. Open the full Files changed tab to comment.',
+  };
+
+  const patches = new Map<string, string>();
+  for (const file of comparison.files ?? []) {
+    if (file.patch) patches.set(file.filename, file.patch);
+  }
+  patchCacheByFile.set(targetKey(target), patches);
+
+  return target;
+}
+
+export async function listPullRequestRangeFiles(
+  host: string,
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+): Promise<ChangedFile[]> {
+  const comparison = await fetchComparison(host, owner, repo, base, head);
+
+  return (comparison.files ?? []).map((file) => ({
+    path: file.filename,
+    previousPath: file.previous_filename ?? null,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+  }));
 }
 
 interface RestFile {
@@ -255,24 +357,17 @@ const patchCacheByFile = new Map<string, Map<string, string>>();
  * is in the key so the two can never collide on a repository whose pull
  * request number happens to look like anything else.
  */
-function cacheKey(
-  host: string,
-  owner: string,
-  repo: string,
-  kind: DiffTargetKind,
-  id: string | number | null,
-): string {
-  return `${host}/${owner}/${repo}/${kind}/${String(id)}`;
+function cacheKey(host: string, owner: string, repo: string, ref: string): string {
+  return `${host}/${owner}/${repo}/${ref}`;
 }
 
+/**
+ * Keyed by `refOf`, so a pull request and that same pull request narrowed to a
+ * commit range are separate entries. Their patches differ, and sharing a key
+ * would let one answer for the other.
+ */
 function targetKey(target: DiffTarget): string {
-  return cacheKey(
-    target.host,
-    target.owner,
-    target.repo,
-    target.kind,
-    target.kind === 'pull' ? target.number : target.headSha,
-  );
+  return cacheKey(target.host, target.owner, target.repo, refOf(target));
 }
 
 export async function listPullRequestFiles(
@@ -305,7 +400,7 @@ export async function listPullRequestFiles(
     if (batch.length < 100) break;
   }
 
-  patchCacheByFile.set(cacheKey(host, owner, repo, 'pull', number), patches);
+  patchCacheByFile.set(cacheKey(host, owner, repo, `pull/${number}`), patches);
   return files;
 }
 
@@ -333,7 +428,7 @@ async function fetchCommit(
   repo: string,
   sha: string,
 ): Promise<RestCommit> {
-  const key = cacheKey(host, owner, repo, 'commit', sha);
+  const key = cacheKey(host, owner, repo, sha);
   const cached = commitCache.get(key);
   if (cached) return cached;
 
@@ -345,7 +440,7 @@ async function fetchCommit(
   for (const file of commit.files ?? []) {
     if (file.patch) patches.set(file.filename, file.patch);
   }
-  patchCacheByFile.set(cacheKey(host, owner, repo, 'commit', commit.sha), patches);
+  patchCacheByFile.set(cacheKey(host, owner, repo, commit.sha), patches);
 
   return commit;
 }
@@ -370,8 +465,12 @@ export async function getCommit(
     // added, which is exactly what it is.
     baseSha: commit.parents[0]?.sha ?? '',
     headSha: commit.sha,
+    baseOwner: owner,
+    baseRepo: repo,
     headOwner: owner,
     headRepo: repo,
+    range: false,
+    commentingDisabledReason: null,
   };
 }
 
@@ -535,6 +634,35 @@ async function resolveCommentableLines(
   return fileDiff ? commentableLines(fileDiff.hunks) : { left: [], right: [] };
 }
 
+/**
+ * Where a comment may go on a range view.
+ *
+ * GitHub addresses a review comment by a line of the *pull request's* diff,
+ * not of whatever range happens to be on screen. On the right that is still
+ * the same file, because the range ends where the pull request does, so the
+ * lines the pull request accepts are the answer. On the left it is not: that
+ * side is an intermediate commit of the branch whose line numbers mean
+ * something else, and offering them would file comments against wrong lines.
+ */
+async function rangeCommentableLines(
+  target: DiffTarget,
+  file: ChangedFile,
+): Promise<CommentableLines> {
+  const whole: DiffTarget = {
+    ...target,
+    range: false,
+    baseOwner: target.owner,
+    baseRepo: target.repo,
+  };
+
+  if (!patchCacheByFile.has(targetKey(whole)) && target.number !== null) {
+    await listPullRequestFiles(target.host, target.owner, target.repo, target.number);
+  }
+
+  const { right } = await resolveCommentableLines(whole, file);
+  return { left: [], right };
+}
+
 /** Reads a blob, turning any failure into null so the caller can fall back. */
 async function tryGetFileContent(
   host: string,
@@ -558,7 +686,7 @@ export async function getFileDiff(target: DiffTarget, file: ChangedFile): Promis
   const [baseBlob, headText] = await Promise.all([
     file.status === 'added'
       ? Promise.resolve(null)
-      : tryGetFileContent(target.host, target.owner, target.repo, target.baseSha, basePath),
+      : tryGetFileContent(target.host, target.baseOwner, target.baseRepo, target.baseSha, basePath),
     file.status === 'removed'
       ? Promise.resolve(null)
       : getFileContent(target.host, target.headOwner, target.headRepo, target.headSha, file.path),
@@ -572,12 +700,16 @@ export async function getFileDiff(target: DiffTarget, file: ChangedFile): Promis
   return {
     target,
     file,
-    commentableLines: await resolveCommentableLines(target, file),
+    commentableLines: target.commentingDisabledReason
+      ? { left: [], right: [] }
+      : target.range
+        ? await rangeCommentableLines(target, file)
+        : await resolveCommentableLines(target, file),
     baseText: baseText ?? '',
     headText: headText ?? '',
-    baseAssetUrl: assetBase(gh, target.owner, target.repo, target.baseSha, basePath),
+    baseAssetUrl: assetBase(gh, target.baseOwner, target.baseRepo, target.baseSha, basePath),
     headAssetUrl: assetBase(gh, target.headOwner, target.headRepo, target.headSha, file.path),
-    baseLinkUrl: linkBase(gh, target.owner, target.repo, target.baseSha, basePath),
+    baseLinkUrl: linkBase(gh, target.baseOwner, target.baseRepo, target.baseSha, basePath),
     headLinkUrl: linkBase(gh, target.headOwner, target.headRepo, target.headSha, file.path),
     authenticated: (await getToken(target.host)) !== null,
   };
@@ -692,9 +824,25 @@ function toReviewThread(node: GqlThread): ReviewThread {
  * commit comment becomes a thread of one — which is exactly what it is.
  */
 export async function listComments(target: DiffTarget, path?: string): Promise<ReviewThread[]> {
-  return target.kind === 'commit'
-    ? listCommitComments(target, path)
-    : listReviewThreads(target, path);
+  if (target.kind === 'commit') return listCommitComments(target, path);
+
+  const threads = await listReviewThreads(target, path);
+  return target.range ? threads.map((thread) => unanchorIfAmbiguous(thread, target)) : threads;
+}
+
+/**
+ * A thread whose line number does not mean what it says on this view.
+ *
+ * Review threads are anchored to lines of the pull request's diff. On a range
+ * view the left side is an intermediate commit of the branch, so a thread on
+ * that side would land on an unrelated line; and if the range stops short of
+ * the latest commit, neither side lines up. Rather than putting a comment
+ * somewhere plausible and wrong, the anchor is dropped — which sends it to the
+ * section for threads that have lost their place, quoted with its own hunk.
+ */
+function unanchorIfAmbiguous(thread: ReviewThread, target: DiffTarget): ReviewThread {
+  const trustworthy = target.commentingDisabledReason === null && thread.side === 'RIGHT';
+  return trustworthy ? thread : { ...thread, line: null, isOutdated: true };
 }
 
 /** Threads for one file. GraphQL is the only source that reports resolved state. */

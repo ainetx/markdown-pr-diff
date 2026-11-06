@@ -30,27 +30,61 @@ export interface DiffTarget {
   title: string;
   baseSha: string;
   headSha: string;
-  /** Head may live in a fork; raw content has to be fetched from there. */
+  /**
+   * Which repository each side's blobs live in.
+   *
+   * A pull request's head may be a fork, and in a commit range both sides are
+   * commits on the branch — so they live wherever the branch does, which is
+   * not always the repository the pull request is against.
+   */
+  baseOwner: string;
+  baseRepo: string;
   headOwner: string;
   headRepo: string;
+  /**
+   * Set when the sides are a commit range inside a pull request rather than
+   * the whole of it, which constrains where a comment may be anchored.
+   */
+  range: boolean;
+  /**
+   * Why commenting is unavailable on this view at all, or null when it is
+   * available.
+   *
+   * Different from an empty set of commentable lines: that says "not on these
+   * lines", this says "not on this view", and the reason is worth showing
+   * rather than leaving the reader to wonder where the controls went.
+   */
+  commentingDisabledReason: string | null;
 }
 
 /** Short identity of a target, used for storage keys and for the title. */
 export function refOf(target: DiffTarget): string {
-  return target.kind === 'pull' ? `pull/${String(target.number)}` : target.headSha;
+  if (target.kind === 'commit') return target.headSha;
+  const pull = `pull/${String(target.number)}`;
+  return target.range ? `${pull}/${target.baseSha}..${target.headSha}` : pull;
 }
 
 /** What to call each side of the diff, which differs by kind. */
 export function sideLabels(target: DiffTarget): { base: string; head: string } {
   const short = (sha: string) => sha.slice(0, 7);
-  return target.kind === 'pull'
-    ? { base: `Base · ${short(target.baseSha)}`, head: `Head · ${short(target.headSha)}` }
-    : {
-        // "Base" means the merge base of a pull request; for a commit the left
-        // side is simply its parent, and saying so avoids implying otherwise.
-        base: target.baseSha ? `Parent · ${short(target.baseSha)}` : 'No parent',
-        head: `Commit · ${short(target.headSha)}`,
-      };
+
+  if (target.kind === 'commit') {
+    return {
+      // "Base" means the merge base of a pull request; for a commit the left
+      // side is simply its parent, and saying so avoids implying otherwise.
+      base: target.baseSha ? `Parent · ${short(target.baseSha)}` : 'No parent',
+      head: `Commit · ${short(target.headSha)}`,
+    };
+  }
+
+  // In a range neither side is the pull request's base or head: both are
+  // commits on its branch, and calling them Base and Head would say the diff
+  // covers the whole pull request when it does not.
+  if (target.range) {
+    return { base: `Since · ${short(target.baseSha)}`, head: `Up to · ${short(target.headSha)}` };
+  }
+
+  return { base: `Base · ${short(target.baseSha)}`, head: `Head · ${short(target.headSha)}` };
 }
 
 export interface ChangedFile {

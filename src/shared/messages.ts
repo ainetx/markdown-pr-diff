@@ -31,6 +31,12 @@ export interface CommitLocator {
   sha: string;
 }
 
+/** A pull request narrowed to the commits between two shas. */
+export interface PrRangeLocator extends PrLocator {
+  base: string;
+  head: string;
+}
+
 export type Request =
   | { type: 'auth:status'; host: string }
   | { type: 'auth:manual-token'; host: string; token: string }
@@ -38,6 +44,8 @@ export type Request =
   | { type: 'hosts:sync' }
   | { type: 'pr:info'; locator: PrLocator }
   | { type: 'pr:files'; locator: PrLocator }
+  | { type: 'pr:range-info'; locator: PrRangeLocator }
+  | { type: 'pr:range-files'; locator: PrRangeLocator }
   | { type: 'commit:info'; locator: CommitLocator }
   | { type: 'commit:files'; locator: CommitLocator }
   | { type: 'pr:file-diff'; target: DiffTarget; file: ChangedFile }
@@ -68,6 +76,8 @@ export interface ResponseMap {
   'hosts:sync': null;
   'pr:info': DiffTarget;
   'pr:files': ChangedFile[];
+  'pr:range-info': DiffTarget;
+  'pr:range-files': ChangedFile[];
   'commit:info': DiffTarget;
   'commit:files': ChangedFile[];
   'pr:file-diff': FileDiffPayload;

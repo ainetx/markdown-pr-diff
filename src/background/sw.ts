@@ -14,8 +14,10 @@ import {
   getFileDiff,
   getCommit,
   getPullRequest,
+  getPullRequestRange,
   listCommitFiles,
   listPullRequestFiles,
+  listPullRequestRangeFiles,
   listComments,
   addReaction,
   replyToComment,
@@ -66,6 +68,14 @@ async function handle(request: Request): Promise<unknown> {
     case 'pr:files': {
       const { host, owner, repo, number } = request.locator;
       return listPullRequestFiles(host, owner, repo, number);
+    }
+    case 'pr:range-info': {
+      const { host, owner, repo, number, base, head } = request.locator;
+      return getPullRequestRange(host, owner, repo, number, base, head);
+    }
+    case 'pr:range-files': {
+      const { host, owner, repo, base, head } = request.locator;
+      return listPullRequestRangeFiles(host, owner, repo, base, head);
     }
     case 'commit:info': {
       const { host, owner, repo, sha } = request.locator;

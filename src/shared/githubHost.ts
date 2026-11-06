@@ -121,6 +121,40 @@ export function parsePullRequestUrl(url: string | URL): PullRequestRef | null {
   };
 }
 
+export interface PullRequestRangeRef extends PullRequestRef {
+  /** The commit the range starts after. */
+  base: string;
+  /** The commit the range ends at. */
+  head: string;
+}
+
+/**
+ * Parses a pull request narrowed to a commit range, such as
+ * /owner/repo/pull/42/changes/aaaaaaa..bbbbbbb.
+ *
+ * GitHub offers this whenever a reviewer asks what changed since they last
+ * looked, and the page then shows only those commits. Reading it as a plain
+ * pull request shows the whole of it instead — a file added earlier in the
+ * branch appears wholly new rather than lightly edited.
+ */
+export function parsePullRequestRange(url: string | URL): PullRequestRangeRef | null {
+  const parsed = typeof url === 'string' ? safeUrl(url) : url;
+  if (!parsed) return null;
+  const match =
+    /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/(?:files|changes)\/([0-9a-f]{7,40})\.\.\.?([0-9a-f]{7,40})(?:\/|$)/i.exec(
+      parsed.pathname,
+    );
+  if (!match) return null;
+  return {
+    host: parsed.hostname,
+    owner: match[1]!,
+    repo: match[2]!,
+    number: Number(match[3]),
+    base: match[4]!,
+    head: match[5]!,
+  };
+}
+
 export interface CommitRef {
   host: string;
   owner: string;

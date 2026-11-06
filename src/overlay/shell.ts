@@ -59,6 +59,7 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   const doc = document;
   const labels = sideLabels(payload.target);
   const isCommit = payload.target.kind === 'commit';
+  const blockedReason = payload.target.commentingDisabledReason;
 
   const host = doc.createElement('div');
   host.className = 'mdpd-host';
@@ -142,10 +143,13 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   // affordance simply never appears, which is indistinguishable from a bug.
   const authChip = doc.createElement('span');
   authChip.className = 'mdpd-chip';
-  authChip.textContent = payload.authenticated ? 'checking account…' : 'read-only';
-  authChip.title = payload.authenticated
-    ? ''
-    : 'No GitHub account is connected, so comments cannot be read or posted.';
+  authChip.textContent =
+    payload.authenticated && !blockedReason ? 'checking account…' : 'read-only';
+  authChip.title = blockedReason
+    ? blockedReason
+    : payload.authenticated
+      ? ''
+      : 'No GitHub account is connected, so comments cannot be read or posted.';
 
   // A wholly added or deleted file has nothing to compare, so the side-by-side
   // layout is meaningless for it — but the reading view still is, and so is
@@ -188,6 +192,12 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   }
 
   function clearError(): void {
+    // A blocked view's explanation is a standing fact, not a transient error:
+    // it survives the refreshes that clear everything else.
+    if (blockedReason) {
+      showError(blockedReason);
+      return;
+    }
     banner.hidden = true;
   }
 
@@ -210,8 +220,9 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
   }
 
   const actions: ThreadActions = {
-    canWrite: payload.authenticated,
-    readOnlyReason: 'Connect a GitHub account in the extension settings to reply from here.',
+    canWrite: payload.authenticated && blockedReason === null,
+    readOnlyReason:
+      blockedReason ?? 'Connect a GitHub account in the extension settings to reply from here.',
     canReply: !isCommit,
     async reply(thread: ReviewThread, body: string) {
       const last = thread.comments[thread.comments.length - 1];
@@ -413,6 +424,13 @@ export function openOverlay(options: OverlayOptions): OverlayHandle {
 
   /** Names the account in the toolbar, and says plainly when it cannot write. */
   async function describeAccount(): Promise<void> {
+    // The account is beside the point when the view itself cannot take a
+    // comment; saying "@you" there would promise something that is not on offer.
+    if (blockedReason) {
+      showError(blockedReason);
+      return;
+    }
+
     try {
       const status = await send({ type: 'auth:status', host: payload.target.host });
       if (!status.connected) {

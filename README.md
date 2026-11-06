@@ -32,6 +32,10 @@ a document that way means reading syntax instead of reading the document.
 - **Review comments in place** — existing threads appear under the paragraph,
   row or item they are about. Reply, start a new comment on any block, resolve,
   edit and delete, all without leaving the window.
+- **A commit range inside a pull request** — the "changes since you last
+  looked" view — diffs exactly those commits, not the whole pull request. A
+  file added earlier in the branch then reads as the small edit it is rather
+  than as a wholly new file.
 - **Commits as well as pull requests.** A commit page gets the same button, and
   the diff is the commit against its parent. Comments there are commit
   comments, which GitHub keeps as a flat list addressed by position in the
@@ -176,6 +180,13 @@ done on GitHub, and the options page links straight to it.
 - A commit comment carries no multi-line range: GitHub addresses it by a single
   position in the diff, so a comment started on a multi-line block lands on the
   block's last changed line.
+- On a commit range, comments can only be left on the right-hand side. GitHub
+  addresses a review comment by a line of the pull request's diff, and the left
+  side of a range is an intermediate commit of the branch whose line numbers
+  mean something else. Existing threads on that side are listed with their own
+  quoted hunk instead of being anchored to a line that is not theirs. If the
+  range also stops before the latest commit, neither side lines up and the view
+  becomes read-only, with the reason stated in the window.
 - The content script carries the renderer (~295 KB minified) and so loads on
   every github.com page, not only pull requests. Moving the overlay into an
   extension-page iframe would shrink it to a few kilobytes; it has not been
